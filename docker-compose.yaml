@@ -1,0 +1,51 @@
+# Docker Compose for AWS Enterprise Assessment Platform
+# Local development and testing deployment
+
+version: '3.8'
+
+services:
+  assessment-platform:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: aws-assessment-platform
+    ports:
+      - "8501:8501"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_HEADLESS=true
+    volumes:
+      # Mount for development (comment out for production)
+      - ./streamlit_app.py:/app/streamlit_app.py:ro
+      - ./config.yaml:/app/config.yaml:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - assessment-network
+
+  # Optional: Redis for session caching (enterprise deployments)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: assessment-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   restart: unless-stopped
+  #   networks:
+  #     - assessment-network
+
+networks:
+  assessment-network:
+    driver: bridge
+
+# volumes:
+#   redis-data:

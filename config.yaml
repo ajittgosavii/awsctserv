@@ -1,0 +1,76 @@
+# AWS Enterprise Assessment Platform Configuration
+# Copy this file to config.yaml and customize as needed
+
+application:
+  name: "AWS Enterprise Assessment Platform"
+  version: "1.0.0"
+  environment: "production"
+
+assessment:
+  control_tower:
+    enabled: true
+    domains:
+      - landing_zone_architecture
+      - governance_guardrails
+      - security_identity
+      - networking_connectivity
+      - operations_monitoring
+    
+  golden_architecture:
+    enabled: true
+    domains:
+      - compute_runtime
+      - api_integration
+      - data_storage
+      - security_compliance
+      - observability_devops
+
+ai:
+  provider: "anthropic"
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 4096
+  temperature: 0.3
+  analysis_types:
+    - gap_analysis
+    - implementation_roadmap
+    - risk_assessment
+    - cost_benefit_analysis
+    - architecture_recommendations
+    - compliance_mapping
+
+export:
+  formats:
+    - markdown
+    - json
+    - pdf
+  include_ai_analysis: true
+  include_raw_responses: true
+
+maturity_levels:
+  optimized:
+    min_score: 80
+    color: "#00d4aa"
+  managed:
+    min_score: 60
+    color: "#00d4aa"
+  developing:
+    min_score: 40
+    color: "#ff9500"
+  initial:
+    min_score: 20
+    color: "#ff6b6b"
+  adhoc:
+    min_score: 0
+    color: "#ff6b6b"
+
+compliance_frameworks:
+  - soc2
+  - pci_dss
+  - hipaa
+  - gdpr
+  - iso27001
+  - nist_csf
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
