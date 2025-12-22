@@ -1,18 +1,22 @@
 """
-AWS Enterprise Assessment Platform
-Control Tower Migration & Golden Architecture (Serverless) Assessment Tool
+AWS Enterprise Assessment Platform v2.0
+Control Tower Migration & Golden Architecture (Serverless) Assessment
 AI-Driven Enterprise Grade Assessment Application
+
+Features:
+- 80+ Assessment Questions across 12 domains
+- AWS Well-Architected Framework Alignment  
+- Industry Benchmarking
+- AI-Powered Analysis with Claude
+- Comprehensive Reporting
 """
 
 import streamlit as st
 import json
 import os
 from datetime import datetime
-from typing import Dict, List, Any, Optional
-import io
-import base64
+from typing import Dict, List, Tuple
 
-# Configure page
 st.set_page_config(
     page_title="AWS Enterprise Assessment Platform",
     page_icon="🏗️",
@@ -20,1487 +24,905 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for enterprise-grade styling
+# CSS Styling
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
-    
-    :root {
-        --primary-color: #0f1419;
-        --secondary-color: #1a2634;
-        --accent-color: #ff9500;
-        --accent-secondary: #00d4aa;
-        --text-primary: #ffffff;
-        --text-secondary: #8899a6;
-        --success-color: #00d4aa;
-        --warning-color: #ff9500;
-        --danger-color: #ff6b6b;
-        --card-bg: #1a2634;
-        --border-color: #2d3e50;
-    }
-    
-    .stApp {
-        background: linear-gradient(135deg, #0f1419 0%, #1a2634 50%, #0f1419 100%);
-    }
-    
-    .main-header {
-        background: linear-gradient(90deg, #1a2634 0%, #2d3e50 100%);
-        padding: 2rem 2.5rem;
-        border-radius: 16px;
-        margin-bottom: 2rem;
-        border: 1px solid #2d3e50;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-    }
-    
-    .main-header h1 {
-        font-family: 'IBM Plex Sans', sans-serif;
-        font-weight: 700;
-        font-size: 2.2rem;
-        background: linear-gradient(90deg, #ff9500, #00d4aa);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin: 0;
-        letter-spacing: -0.5px;
-    }
-    
-    .main-header p {
-        font-family: 'IBM Plex Sans', sans-serif;
-        color: #8899a6;
-        font-size: 1rem;
-        margin-top: 0.5rem;
-    }
-    
-    .assessment-card {
-        background: linear-gradient(145deg, #1a2634 0%, #243447 100%);
-        padding: 1.75rem;
-        border-radius: 16px;
-        border: 1px solid #2d3e50;
-        margin-bottom: 1.5rem;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-    }
-    
-    .assessment-card:hover {
-        border-color: #ff9500;
-        box-shadow: 0 8px 32px rgba(255,149,0,0.15);
-        transform: translateY(-2px);
-    }
-    
-    .metric-card {
-        background: linear-gradient(145deg, #243447 0%, #1a2634 100%);
-        padding: 1.5rem;
-        border-radius: 12px;
-        text-align: center;
-        border: 1px solid #2d3e50;
-    }
-    
-    .metric-value {
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 2.5rem;
-        font-weight: 700;
-        color: #00d4aa;
-    }
-    
-    .metric-label {
-        font-family: 'IBM Plex Sans', sans-serif;
-        font-size: 0.85rem;
-        color: #8899a6;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        margin-top: 0.5rem;
-    }
-    
-    .domain-header {
-        font-family: 'IBM Plex Sans', sans-serif;
-        font-weight: 600;
-        font-size: 1.1rem;
-        color: #ff9500;
-        margin-bottom: 1rem;
-        padding-bottom: 0.5rem;
-        border-bottom: 2px solid #2d3e50;
-    }
-    
-    .score-badge {
-        display: inline-block;
-        padding: 0.4rem 1rem;
-        border-radius: 20px;
-        font-family: 'IBM Plex Mono', monospace;
-        font-weight: 600;
-        font-size: 0.9rem;
-    }
-    
-    .score-high { background: rgba(0,212,170,0.2); color: #00d4aa; border: 1px solid #00d4aa; }
-    .score-medium { background: rgba(255,149,0,0.2); color: #ff9500; border: 1px solid #ff9500; }
-    .score-low { background: rgba(255,107,107,0.2); color: #ff6b6b; border: 1px solid #ff6b6b; }
-    
-    .stButton > button {
-        font-family: 'IBM Plex Sans', sans-serif;
-        font-weight: 600;
-        background: linear-gradient(90deg, #ff9500, #ff7b00);
-        color: white;
-        border: none;
-        padding: 0.75rem 2rem;
-        border-radius: 8px;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(255,149,0,0.3);
-    }
-    
-    .stButton > button:hover {
-        background: linear-gradient(90deg, #ff7b00, #ff5500);
-        box-shadow: 0 6px 20px rgba(255,149,0,0.4);
-        transform: translateY(-2px);
-    }
-    
-    .stRadio > label, .stCheckbox > label {
-        font-family: 'IBM Plex Sans', sans-serif;
-        color: #ffffff !important;
-    }
-    
-    .stSelectbox > label, .stTextArea > label, .stTextInput > label {
-        font-family: 'IBM Plex Sans', sans-serif;
-        color: #8899a6 !important;
-        font-weight: 500;
-    }
-    
-    .recommendation-card {
-        background: linear-gradient(145deg, #1a2634 0%, #0f1419 100%);
-        border-left: 4px solid #00d4aa;
-        padding: 1.25rem;
-        border-radius: 0 12px 12px 0;
-        margin: 1rem 0;
-    }
-    
-    .gap-card {
-        background: linear-gradient(145deg, #1a2634 0%, #0f1419 100%);
-        border-left: 4px solid #ff6b6b;
-        padding: 1.25rem;
-        border-radius: 0 12px 12px 0;
-        margin: 1rem 0;
-    }
-    
-    .insight-card {
-        background: linear-gradient(145deg, #1a2634 0%, #0f1419 100%);
-        border-left: 4px solid #ff9500;
-        padding: 1.25rem;
-        border-radius: 0 12px 12px 0;
-        margin: 1rem 0;
-    }
-    
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: #1a2634;
-        padding: 0.5rem;
-        border-radius: 12px;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        font-family: 'IBM Plex Sans', sans-serif;
-        font-weight: 500;
-        color: #8899a6;
-        background-color: transparent;
-        border-radius: 8px;
-        padding: 0.75rem 1.5rem;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background: linear-gradient(90deg, #ff9500, #ff7b00) !important;
-        color: white !important;
-    }
-    
-    .sidebar .stRadio > label {
-        font-size: 0.95rem;
-    }
-    
-    div[data-testid="stExpander"] {
-        background: #1a2634;
-        border: 1px solid #2d3e50;
-        border-radius: 12px;
-    }
-    
-    .stProgress > div > div {
-        background: linear-gradient(90deg, #ff9500, #00d4aa);
-    }
-    
-    .upload-zone {
-        border: 2px dashed #2d3e50;
-        border-radius: 16px;
-        padding: 3rem;
-        text-align: center;
-        background: rgba(26,38,52,0.5);
-        transition: all 0.3s ease;
-    }
-    
-    .upload-zone:hover {
-        border-color: #ff9500;
-        background: rgba(255,149,0,0.05);
-    }
-    
-    .ai-response {
-        background: linear-gradient(145deg, #0f1419 0%, #1a2634 100%);
-        border: 1px solid #2d3e50;
-        border-radius: 16px;
-        padding: 1.5rem;
-        margin-top: 1rem;
-    }
-    
-    .ai-response h4 {
-        color: #00d4aa;
-        font-family: 'IBM Plex Sans', sans-serif;
-        margin-bottom: 1rem;
-    }
-    
-    hr {
-        border-color: #2d3e50;
-        margin: 2rem 0;
-    }
-    
-    .stDownloadButton > button {
-        background: linear-gradient(90deg, #00d4aa, #00b894) !important;
-        font-family: 'IBM Plex Sans', sans-serif;
-        font-weight: 600;
-    }
-    
-    .stDownloadButton > button:hover {
-        background: linear-gradient(90deg, #00b894, #00a67d) !important;
-    }
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono&display=swap');
+:root {
+    --primary: #0f1419; --secondary: #1a2634; --accent: #ff9500;
+    --success: #00d4aa; --warning: #ff9500; --danger: #ff6b6b;
+}
+.stApp { background: linear-gradient(135deg, #0f1419 0%, #1a2634 50%, #0f1419 100%); }
+.main-header {
+    background: linear-gradient(90deg, #1a2634, #2d3e50);
+    padding: 2rem; border-radius: 16px; margin-bottom: 2rem;
+    border: 1px solid #2d3e50;
+}
+.main-header h1 {
+    font-family: 'IBM Plex Sans', sans-serif; font-weight: 700; font-size: 2rem;
+    background: linear-gradient(90deg, #ff9500, #00d4aa);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.metric-card {
+    background: linear-gradient(145deg, #243447, #1a2634);
+    padding: 1.5rem; border-radius: 12px; text-align: center;
+    border: 1px solid #2d3e50; margin-bottom: 1rem;
+}
+.metric-value { font-family: 'IBM Plex Mono'; font-size: 2.5rem; font-weight: 700; }
+.metric-label { font-size: 0.85rem; color: #8899a6; text-transform: uppercase; }
+.score-high { background: rgba(0,212,170,0.2); color: #00d4aa; }
+.score-medium { background: rgba(255,149,0,0.2); color: #ff9500; }
+.score-low { background: rgba(255,107,107,0.2); color: #ff6b6b; }
+.domain-header { color: #ff9500; font-weight: 600; border-bottom: 2px solid #2d3e50; padding-bottom: 0.5rem; }
+.subcat-header { color: #00d4aa; font-weight: 500; border-left: 3px solid #00d4aa; padding-left: 0.5rem; }
+.question-card { background: rgba(26,38,52,0.5); padding: 1rem; border-radius: 8px; margin: 0.5rem 0; border: 1px solid #2d3e50; }
+.risk-critical { background: #ff6b6b; color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+.risk-high { background: #ff9500; color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+.risk-medium { background: #ffd43b; color: #1a2634; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+.pillar-tag { display: inline-block; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.7rem; margin-right: 0.25rem; }
+.pillar-SEC { background: rgba(239,68,68,0.2); color: #ef4444; }
+.pillar-REL { background: rgba(59,130,246,0.2); color: #3b82f6; }
+.pillar-PERF { background: rgba(168,85,247,0.2); color: #a855f7; }
+.pillar-COST { background: rgba(34,197,94,0.2); color: #22c55e; }
+.pillar-OPS { background: rgba(249,115,22,0.2); color: #f97316; }
+.stButton > button { background: linear-gradient(90deg, #ff9500, #ff7b00); color: white; font-weight: 600; }
+hr { border-color: #2d3e50; }
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
-if 'assessment_data' not in st.session_state:
-    st.session_state.assessment_data = {}
-if 'ct_responses' not in st.session_state:
-    st.session_state.ct_responses = {}
-if 'ga_responses' not in st.session_state:
-    st.session_state.ga_responses = {}
-if 'ai_analysis' not in st.session_state:
-    st.session_state.ai_analysis = None
-if 'document_content' not in st.session_state:
-    st.session_state.document_content = None
+# Well-Architected Pillars
+WA_PILLARS = {
+    "SEC": "Security", "REL": "Reliability", "PERF": "Performance",
+    "COST": "Cost Optimization", "OPS": "Operational Excellence"
+}
 
-# Assessment Questionnaire Data
-CONTROL_TOWER_DOMAINS = {
-    "Landing Zone Architecture": {
-        "weight": 0.20,
-        "questions": [
-            {
-                "id": "ct_lz_1",
-                "question": "What is the current state of your AWS multi-account strategy?",
-                "options": {
-                    "No multi-account strategy exists": 1,
-                    "Basic account separation (dev/prod)": 2,
-                    "Organizational units defined but not enforced": 3,
-                    "Well-defined OU structure with some automation": 4,
-                    "Mature multi-account with full automation": 5
-                }
-            },
-            {
-                "id": "ct_lz_2",
-                "question": "How are new AWS accounts currently provisioned?",
-                "options": {
-                    "Manual creation through console": 1,
-                    "Semi-automated with some scripts": 2,
-                    "Automated but no standardization": 3,
-                    "Account Factory with basic customization": 4,
-                    "Fully automated Account Factory with AFT": 5
-                }
-            },
-            {
-                "id": "ct_lz_3",
-                "question": "What is your current baseline configuration management approach?",
-                "options": {
-                    "No baseline configurations": 1,
-                    "Manual baseline application": 2,
-                    "Partial IaC implementation": 3,
-                    "Full IaC with some drift detection": 4,
-                    "Complete IaC with automated drift remediation": 5
-                }
-            },
-            {
-                "id": "ct_lz_4",
-                "question": "How many AWS accounts are currently in scope for Control Tower migration?",
-                "options": {
-                    "1-10 accounts": 5,
-                    "11-50 accounts": 4,
-                    "51-100 accounts": 3,
-                    "101-300 accounts": 2,
-                    "300+ accounts": 1
-                }
-            }
-        ]
+# Industry Benchmarks
+BENCHMARKS = {
+    "financial": {"name": "Financial Services", "avg": 72, "top": 85},
+    "healthcare": {"name": "Healthcare", "avg": 65, "top": 80},
+    "technology": {"name": "Technology", "avg": 78, "top": 90},
+    "retail": {"name": "Retail", "avg": 60, "top": 75},
+    "government": {"name": "Government", "avg": 58, "top": 72}
+}
+
+# =============================================================================
+# CONTROL TOWER ASSESSMENT - COMPREHENSIVE (80+ Questions)
+# =============================================================================
+CT_DOMAINS = {
+    "Organizational Strategy": {
+        "weight": 0.12, "pillars": ["OPS", "SEC"],
+        "subcategories": {
+            "Multi-Account Strategy": [
+                {"id": "CT-ORG-001", "q": "What is your AWS multi-account strategy maturity?", "risk": "high",
+                 "opts": {"No strategy": 1, "Basic dev/prod separation": 2, "Defined OU structure": 3, "Comprehensive with workload isolation": 4, "Mature with automated lifecycle": 5}},
+                {"id": "CT-ORG-002", "q": "How are Organizational Units structured?", "risk": "high",
+                 "opts": {"No OU structure": 1, "Basic OUs": 2, "SDLC-aligned OUs": 3, "Nested OUs with separation": 4, "Comprehensive hierarchy with policy inheritance": 5}},
+                {"id": "CT-ORG-003", "q": "What is your account naming and metadata approach?", "risk": "medium",
+                 "opts": {"No convention": 1, "Informal guidelines": 2, "Documented partially followed": 3, "Enforced with validation": 4, "Automated with metadata enrichment": 5}},
+                {"id": "CT-ORG-004", "q": "How is account ownership managed?", "risk": "medium",
+                 "opts": {"No ownership model": 1, "Informal assignments": 2, "Documented manual tracking": 3, "CMDB/ServiceNow tracked": 4, "Automated with HR integration": 5}},
+            ],
+            "Governance Framework": [
+                {"id": "CT-ORG-005", "q": "What governance bodies oversee cloud operations?", "risk": "high",
+                 "opts": {"No governance": 1, "Ad-hoc IT decisions": 2, "CCoE established": 3, "CCoE with RACI": 4, "Mature federated governance": 5}},
+                {"id": "CT-ORG-006", "q": "How are cloud policies documented?", "risk": "medium",
+                 "opts": {"No policies": 1, "Informal wikis": 2, "Formal with review": 3, "Integrated with compliance tools": 4, "Policy-as-Code automated": 5}},
+                {"id": "CT-ORG-007", "q": "What is your exception management process?", "risk": "medium",
+                 "opts": {"No process": 1, "Ad-hoc approvals": 2, "Documented request process": 3, "Workflow with time-bound": 4, "Automated with risk scoring": 5}},
+            ]
+        }
     },
-    "Governance & Guardrails": {
-        "weight": 0.25,
-        "questions": [
-            {
-                "id": "ct_gov_1",
-                "question": "What is your current approach to preventive controls?",
-                "options": {
-                    "No preventive controls in place": 1,
-                    "Basic IAM policies only": 2,
-                    "SCPs defined but not comprehensive": 3,
-                    "Comprehensive SCPs with some automation": 4,
-                    "Full SCP hierarchy with automated enforcement": 5
-                }
-            },
-            {
-                "id": "ct_gov_2",
-                "question": "How do you currently handle detective controls?",
-                "options": {
-                    "No detective controls": 1,
-                    "Basic CloudTrail logging": 2,
-                    "CloudTrail + some Config rules": 3,
-                    "Comprehensive Config rules with alerts": 4,
-                    "Full detective controls with auto-remediation": 5
-                }
-            },
-            {
-                "id": "ct_gov_3",
-                "question": "What is your compliance posture for regulatory requirements?",
-                "options": {
-                    "No compliance framework": 1,
-                    "Awareness of requirements only": 2,
-                    "Partial compliance implementation": 3,
-                    "Most compliance requirements met": 4,
-                    "Full compliance with continuous monitoring": 5
-                }
-            },
-            {
-                "id": "ct_gov_4",
-                "question": "How are tagging policies enforced across accounts?",
-                "options": {
-                    "No tagging strategy": 1,
-                    "Tagging guidelines but no enforcement": 2,
-                    "Some automated tagging checks": 3,
-                    "Tag policies with partial enforcement": 4,
-                    "Mandatory tagging with automated enforcement": 5
-                }
-            }
-        ]
+    "Account Factory & Provisioning": {
+        "weight": 0.10, "pillars": ["OPS", "SEC", "REL"],
+        "subcategories": {
+            "Account Provisioning": [
+                {"id": "CT-ACC-001", "q": "How are new AWS accounts provisioned?", "risk": "high",
+                 "opts": {"Manual console": 1, "CLI scripts": 2, "Semi-automated IaC": 3, "Service Catalog": 4, "Fully automated AFT": 5}},
+                {"id": "CT-ACC-002", "q": "What is your account request workflow?", "risk": "medium",
+                 "opts": {"No process": 1, "Email requests": 2, "ITSM tickets": 3, "Automated approval": 4, "Self-service portal": 5}},
+                {"id": "CT-ACC-003", "q": "Average time to provision a new account?", "risk": "medium",
+                 "opts": {"2+ weeks": 1, "1-2 weeks": 2, "3-5 days": 3, "1-2 days": 4, "<4 hours automated": 5}},
+            ],
+            "Baseline Configuration": [
+                {"id": "CT-ACC-004", "q": "What baseline configurations are applied?", "risk": "critical",
+                 "opts": {"No baselines": 1, "Basic IAM/logging": 2, "Security baseline": 3, "Comprehensive with networking": 4, "Full with compliance controls": 5}},
+                {"id": "CT-ACC-005", "q": "How is baseline drift detected?", "risk": "high",
+                 "opts": {"No detection": 1, "Manual audits": 2, "Config rules alerting": 3, "Automated detection": 4, "Auto-remediation": 5}},
+                {"id": "CT-ACC-006", "q": "What IaC approach for baselines?", "risk": "medium",
+                 "opts": {"No IaC": 1, "Partial IaC": 2, "CloudFormation StackSets": 3, "Terraform managed": 4, "GitOps automated": 5}},
+            ]
+        }
     },
-    "Security & Identity": {
-        "weight": 0.20,
-        "questions": [
-            {
-                "id": "ct_sec_1",
-                "question": "What is your current identity management approach for AWS?",
-                "options": {
-                    "Individual IAM users per account": 1,
-                    "Federated access with basic setup": 2,
-                    "AWS SSO with basic configuration": 3,
-                    "IAM Identity Center with permission sets": 4,
-                    "Fully integrated IAM Identity Center with ABAC": 5
-                }
-            },
-            {
-                "id": "ct_sec_2",
-                "question": "How is cross-account access currently managed?",
-                "options": {
-                    "Shared credentials": 1,
-                    "IAM users with cross-account roles": 2,
-                    "Role assumption with basic trust policies": 3,
-                    "Well-defined role hierarchy": 4,
-                    "Automated role management with least privilege": 5
-                }
-            },
-            {
-                "id": "ct_sec_3",
-                "question": "What is your security baseline for new accounts?",
-                "options": {
-                    "No security baseline": 1,
-                    "Manual security configuration": 2,
-                    "Partial security automation": 3,
-                    "Security baseline with some gaps": 4,
-                    "Comprehensive automated security baseline": 5
-                }
-            }
-        ]
+    "Guardrails & Controls": {
+        "weight": 0.15, "pillars": ["SEC", "OPS"],
+        "subcategories": {
+            "Service Control Policies": [
+                {"id": "CT-GRD-001", "q": "What is your SCP implementation maturity?", "risk": "critical",
+                 "opts": {"No SCPs": 1, "Basic deny policies": 2, "Security guardrails": 3, "Comprehensive OU-specific": 4, "Layered with inheritance": 5}},
+                {"id": "CT-GRD-002", "q": "How are SCPs tested before deployment?", "risk": "high",
+                 "opts": {"No testing": 1, "Manual review": 2, "Sandbox OU testing": 3, "Policy Simulator": 4, "CI/CD with validation": 5}},
+                {"id": "CT-GRD-003", "q": "What SCP categories are enforced?", "risk": "high",
+                 "opts": {"None": 1, "Region/service only": 2, "Security controls": 3, "Security + compliance + cost": 4, "Full coverage + data residency": 5}},
+                {"id": "CT-GRD-004", "q": "How is SCP versioning managed?", "risk": "medium",
+                 "opts": {"No version control": 1, "Manual documentation": 2, "Git-based": 3, "With change history": 4, "GitOps with rollback": 5}},
+            ],
+            "Control Tower Guardrails": [
+                {"id": "CT-GRD-005", "q": "Which guardrail categories will you enable?", "risk": "high",
+                 "opts": {"Mandatory only": 1, "Some strongly recommended": 2, "All strongly recommended": 3, "Selective elective": 4, "Comprehensive + custom": 5}},
+                {"id": "CT-GRD-006", "q": "How will guardrail violations be handled?", "risk": "high",
+                 "opts": {"No process": 1, "Manual review": 2, "Automated alerting": 3, "Escalation workflow": 4, "Auto-remediation": 5}},
+                {"id": "CT-GRD-007", "q": "Approach to custom Control Tower controls?", "risk": "medium",
+                 "opts": {"No custom controls": 1, "Evaluate later": 2, "Identified not implemented": 3, "Key compliance requirements": 4, "Comprehensive with CI/CD": 5}},
+            ]
+        }
     },
-    "Networking & Connectivity": {
-        "weight": 0.15,
-        "questions": [
-            {
-                "id": "ct_net_1",
-                "question": "What is your current network architecture approach?",
-                "options": {
-                    "Individual VPCs with no connectivity": 1,
-                    "VPC peering for some accounts": 2,
-                    "Transit Gateway with basic setup": 3,
-                    "Hub-spoke with Network Firewall": 4,
-                    "Full network architecture with inspection": 5
-                }
-            },
-            {
-                "id": "ct_net_2",
-                "question": "How is centralized DNS and resolution handled?",
-                "options": {
-                    "Individual Route53 zones per account": 1,
-                    "Some shared hosted zones": 2,
-                    "Route53 Resolver with basic rules": 3,
-                    "Centralized DNS with some automation": 4,
-                    "Fully automated centralized DNS management": 5
-                }
-            },
-            {
-                "id": "ct_net_3",
-                "question": "What is your approach to network connectivity to on-premises?",
-                "options": {
-                    "Individual VPN connections per account": 1,
-                    "Shared VPN with manual routing": 2,
-                    "Direct Connect with basic setup": 3,
-                    "Direct Connect Gateway with transit": 4,
-                    "Full hybrid connectivity with redundancy": 5
-                }
-            }
-        ]
+    "Detective Controls & Compliance": {
+        "weight": 0.12, "pillars": ["SEC", "OPS"],
+        "subcategories": {
+            "AWS Config": [
+                {"id": "CT-DET-001", "q": "AWS Config deployment status?", "risk": "critical",
+                 "opts": {"Not enabled": 1, "Some accounts": 2, "Organization-wide": 3, "With aggregator + custom": 4, "Conformance packs + auto-remediation": 5}},
+                {"id": "CT-DET-002", "q": "How many Config rules deployed?", "risk": "high",
+                 "opts": {"None": 1, "1-20": 2, "21-50": 3, "51-100 + conformance": 4, "100+ with custom": 5}},
+                {"id": "CT-DET-003", "q": "How is Config data aggregated?", "risk": "medium",
+                 "opts": {"No aggregation": 1, "Manual collection": 2, "Aggregator in mgmt": 3, "Delegated admin": 4, "Advanced analytics": 5}},
+            ],
+            "Security Hub": [
+                {"id": "CT-DET-004", "q": "Security Hub deployment status?", "risk": "critical",
+                 "opts": {"Not enabled": 1, "Some accounts": 2, "Org-wide delegated": 3, "Multiple standards": 4, "Custom insights + integrations": 5}},
+                {"id": "CT-DET-005", "q": "Security Hub standards enabled?", "risk": "high",
+                 "opts": {"None": 1, "AWS Foundational only": 2, "CIS Benchmark": 3, "Multiple (CIS, PCI, NIST)": 4, "All + custom controls": 5}},
+                {"id": "CT-DET-006", "q": "How are findings triaged?", "risk": "high",
+                 "opts": {"No triage": 1, "Periodic manual": 2, "Automated alerting critical": 3, "Ticketing integration": 4, "Auto-remediation + exceptions": 5}},
+            ],
+            "Compliance": [
+                {"id": "CT-DET-007", "q": "Compliance frameworks required?", "risk": "critical",
+                 "opts": {"None": 1, "Internal policies": 2, "Single framework": 3, "Multiple (SOC2, PCI, HIPAA)": 4, "Complex multi-framework": 5}},
+                {"id": "CT-DET-008", "q": "How is compliance evidence collected?", "risk": "high",
+                 "opts": {"No collection": 1, "Manual screenshots": 2, "Periodic exports": 3, "Audit Manager": 4, "GRC platform integration": 5}},
+            ]
+        }
     },
-    "Operations & Monitoring": {
-        "weight": 0.20,
-        "questions": [
-            {
-                "id": "ct_ops_1",
-                "question": "How is centralized logging currently implemented?",
-                "options": {
-                    "No centralized logging": 1,
-                    "CloudTrail to individual S3 buckets": 2,
-                    "Centralized logging bucket exists": 3,
-                    "Log aggregation with some analysis": 4,
-                    "Full log aggregation with SIEM integration": 5
-                }
-            },
-            {
-                "id": "ct_ops_2",
-                "question": "What is your approach to cost management across accounts?",
-                "options": {
-                    "Individual account billing review": 1,
-                    "Consolidated billing only": 2,
-                    "Cost allocation tags defined": 3,
-                    "Cost management with budgets and alerts": 4,
-                    "Full FinOps with optimization automation": 5
-                }
-            },
-            {
-                "id": "ct_ops_3",
-                "question": "How mature is your operational runbook and automation?",
-                "options": {
-                    "No documented runbooks": 1,
-                    "Basic runbooks exist": 2,
-                    "Runbooks with some automation": 3,
-                    "Comprehensive runbooks with SSM": 4,
-                    "Full automation with self-healing": 5
-                }
-            }
-        ]
+    "Identity & Access Management": {
+        "weight": 0.12, "pillars": ["SEC"],
+        "subcategories": {
+            "Identity Federation": [
+                {"id": "CT-IAM-001", "q": "Current identity provider for AWS?", "risk": "critical",
+                 "opts": {"Local IAM users": 1, "Some federated SAML": 2, "AWS SSO/Identity Center": 3, "Full IdP integration": 4, "SCIM + JIT provisioning": 5}},
+                {"id": "CT-IAM-002", "q": "IdP for IAM Identity Center?", "risk": "high",
+                 "opts": {"Native directory": 1, "AD Connector": 2, "Azure AD/Entra": 3, "Okta/enterprise IdP": 4, "Multi-IdP routing": 5}},
+                {"id": "CT-IAM-003", "q": "How is MFA enforced?", "risk": "critical",
+                 "opts": {"No MFA": 1, "Encouraged not enforced": 2, "Console access": 3, "All human access": 4, "Hardware for privileged": 5}},
+            ],
+            "Permission Management": [
+                {"id": "CT-IAM-004", "q": "Permission sets management?", "risk": "high",
+                 "opts": {"Not using Identity Center": 1, "AWS managed only": 2, "Custom inline": 3, "Modular managed": 4, "ABAC-enabled dynamic": 5}},
+                {"id": "CT-IAM-005", "q": "Least privilege implementation?", "risk": "high",
+                 "opts": {"Broad permissions": 1, "Manual review": 2, "Access Analyzer": 3, "Regular right-sizing": 4, "Automated continuous": 5}},
+                {"id": "CT-IAM-006", "q": "Privileged access management?", "risk": "critical",
+                 "opts": {"No distinction": 1, "Separate accounts": 2, "JIT for some": 3, "PAM solution": 4, "Zero-standing + recording": 5}},
+            ],
+            "Workload Identity": [
+                {"id": "CT-IAM-007", "q": "Machine/service identity management?", "risk": "high",
+                 "opts": {"Long-lived keys": 1, "IAM roles some": 2, "Role chaining": 3, "Roles Anywhere": 4, "Short-lived comprehensive": 5}},
+                {"id": "CT-IAM-008", "q": "Cross-account roles management?", "risk": "high",
+                 "opts": {"Manual per account": 1, "StackSets": 2, "Centralized IaC": 3, "Role vending": 4, "Automated trust controls": 5}},
+            ]
+        }
+    },
+    "Network Architecture": {
+        "weight": 0.10, "pillars": ["SEC", "REL", "PERF"],
+        "subcategories": {
+            "Network Topology": [
+                {"id": "CT-NET-001", "q": "Multi-account network architecture?", "risk": "high",
+                 "opts": {"Independent VPCs": 1, "VPC peering select": 2, "Transit Gateway": 3, "Hub-spoke centralized": 4, "Advanced segmentation": 5}},
+                {"id": "CT-NET-002", "q": "Network IPAM management?", "risk": "high",
+                 "opts": {"No IPAM": 1, "Spreadsheet": 2, "VPC IPAM basic": 3, "Automated allocation": 4, "Enterprise IPAM integration": 5}},
+                {"id": "CT-NET-003", "q": "VPC design pattern?", "risk": "medium",
+                 "opts": {"No standard": 1, "Basic public/private": 2, "Multi-AZ NAT": 3, "Standardized automated": 4, "Customizable blueprints": 5}},
+            ],
+            "Hybrid & Security": [
+                {"id": "CT-NET-004", "q": "On-premises connectivity?", "risk": "high",
+                 "opts": {"None": 5, "Site-to-site per account": 2, "Centralized VPN": 3, "Direct Connect + VPN": 4, "Redundant DC engineering": 5}},
+                {"id": "CT-NET-005", "q": "Hybrid DNS resolution?", "risk": "medium",
+                 "opts": {"No hybrid DNS": 1, "Manual config": 2, "R53 Resolver forwarding": 3, "Centralized endpoints": 4, "Full bidirectional": 5}},
+                {"id": "CT-NET-006", "q": "Network traffic inspection?", "risk": "high",
+                 "opts": {"No inspection": 1, "SG/NACLs only": 2, "Network Firewall some": 3, "Centralized inspection": 4, "IDS/IPS + threat intel": 5}},
+                {"id": "CT-NET-007", "q": "Egress traffic control?", "risk": "critical",
+                 "opts": {"No controls": 1, "NAT no filtering": 2, "Centralized logging": 3, "Proxy URL filtering": 4, "Zero-trust + DLP": 5}},
+            ]
+        }
+    },
+    "Logging & Monitoring": {
+        "weight": 0.10, "pillars": ["OPS", "SEC", "REL"],
+        "subcategories": {
+            "Centralized Logging": [
+                {"id": "CT-LOG-001", "q": "CloudTrail configuration?", "risk": "critical",
+                 "opts": {"Not all accounts": 1, "Account-level local": 2, "Organization trail": 3, "With data events": 4, "Insights + Lake": 5}},
+                {"id": "CT-LOG-002", "q": "VPC Flow Logs management?", "risk": "high",
+                 "opts": {"Not enabled": 1, "Some VPCs": 2, "All centralized": 3, "Traffic mirroring": 4, "Real-time analysis": 5}},
+                {"id": "CT-LOG-003", "q": "Log retention strategy?", "risk": "medium",
+                 "opts": {"No policy": 1, "Default": 2, "S3 lifecycle": 3, "Tiered Glacier": 4, "Compliance legal hold": 5}},
+                {"id": "CT-LOG-004", "q": "Log analysis and correlation?", "risk": "high",
+                 "opts": {"None": 1, "Manual when needed": 2, "CloudWatch Insights": 3, "SIEM integration": 4, "ML anomaly detection": 5}},
+            ],
+            "Monitoring": [
+                {"id": "CT-LOG-005", "q": "CloudWatch configuration?", "risk": "medium",
+                 "opts": {"Default only": 1, "Some custom metrics": 2, "Cross-account access": 3, "Centralized dashboards": 4, "X-Ray ServiceLens": 5}},
+                {"id": "CT-LOG-006", "q": "Alerting strategy?", "risk": "medium",
+                 "opts": {"No alerting": 1, "Email some": 2, "SNS PagerDuty/Slack": 3, "Tiered severity": 4, "AIOps runbook automation": 5}},
+            ]
+        }
+    },
+    "Cost Management": {
+        "weight": 0.08, "pillars": ["COST", "OPS"],
+        "subcategories": {
+            "Cost Visibility": [
+                {"id": "CT-FIN-001", "q": "Cost visibility across accounts?", "risk": "medium",
+                 "opts": {"Individual billing": 1, "Consolidated limited": 2, "Cost Explorer basic": 3, "CUR Athena": 4, "FinOps platform": 5}},
+                {"id": "CT-FIN-002", "q": "Cost allocation to business units?", "risk": "medium",
+                 "opts": {"No allocation": 1, "Account-based": 2, "Tags partial": 3, "Comprehensive enforced": 4, "Advanced split amortization": 5}},
+                {"id": "CT-FIN-003", "q": "Budgets and forecasting?", "risk": "medium",
+                 "opts": {"No budgets": 1, "Annual org level": 2, "Account-level alerts": 3, "Granular forecasting": 4, "ML anomaly detection": 5}},
+            ],
+            "Optimization": [
+                {"id": "CT-FIN-004", "q": "RI/Savings Plans management?", "risk": "medium",
+                 "opts": {"None": 1, "Reactive RIs": 2, "Coverage periodic": 3, "Optimized central": 4, "Automated sharing": 5}},
+                {"id": "CT-FIN-005", "q": "Optimization recommendations?", "risk": "low",
+                 "opts": {"None": 1, "Ad-hoc": 2, "Trusted Advisor": 3, "Compute Optimizer": 4, "Automated governance": 5}},
+            ]
+        }
+    },
+    "Backup & DR": {
+        "weight": 0.08, "pillars": ["REL", "SEC"],
+        "subcategories": {
+            "Backup": [
+                {"id": "CT-BDR-001", "q": "Backup management across accounts?", "risk": "critical",
+                 "opts": {"No strategy": 1, "Account-level": 2, "AWS Backup each": 3, "Centralized policies": 4, "Org-wide cross-account": 5}},
+                {"id": "CT-BDR-002", "q": "Backup policy enforcement?", "risk": "high",
+                 "opts": {"No enforcement": 1, "Guidelines": 2, "Config rules": 3, "Mandatory opt-in": 4, "Preventive controls": 5}},
+                {"id": "CT-BDR-003", "q": "Backup testing?", "risk": "high",
+                 "opts": {"None": 1, "Ad-hoc": 2, "Periodic manual": 3, "Scheduled automated": 4, "Continuous DR drills": 5}},
+            ],
+            "Disaster Recovery": [
+                {"id": "CT-BDR-004", "q": "Multi-region DR strategy?", "risk": "high",
+                 "opts": {"None": 1, "Backup to region": 2, "Pilot light": 3, "Warm standby": 4, "Active-active": 5}},
+                {"id": "CT-BDR-005", "q": "Control Tower resilience?", "risk": "high",
+                 "opts": {"No consideration": 1, "Documentation": 2, "IaC backup": 3, "Automated backup": 4, "Full DR tested": 5}},
+            ]
+        }
+    },
+    "Migration Readiness": {
+        "weight": 0.08, "pillars": ["OPS", "REL"],
+        "subcategories": {
+            "Account Inventory": [
+                {"id": "CT-MIG-001", "q": "Existing account inventory?", "risk": "high",
+                 "opts": {"No inventory": 1, "Partial": 2, "Complete limited meta": 3, "With ownership/purpose": 4, "Dynamic automated": 5}},
+                {"id": "CT-MIG-002", "q": "Account count and distribution?", "risk": "high",
+                 "opts": {"Unknown": 1, "1-25": 5, "26-100": 4, "101-500": 3, "500+": 2}},
+                {"id": "CT-MIG-003", "q": "Non-standard configurations?", "risk": "high",
+                 "opts": {"Unknown": 1, "Many non-standard": 2, "Some identified": 3, "Few non-standard": 4, "All follow standards": 5}},
+            ],
+            "Enrollment": [
+                {"id": "CT-MIG-004", "q": "Account readiness for enrollment?", "risk": "critical",
+                 "opts": {"No assessment": 1, "Basic some": 2, "Pre-flight issues identified": 3, "Most ready remediation plan": 4, "All verified": 5}},
+                {"id": "CT-MIG-005", "q": "Config/CloudTrail conflicts?", "risk": "critical",
+                 "opts": {"Unknown": 1, "Many conflicts": 2, "Identified planned": 3, "Most resolved": 4, "None or all resolved": 5}},
+                {"id": "CT-MIG-006", "q": "Accounts that cannot be enrolled?", "risk": "medium",
+                 "opts": {"No approach": 1, "Determine during": 2, "Identified no solution": 3, "Legacy handling plan": 4, "Comprehensive parity": 5}},
+            ]
+        }
+    },
+    "Operational Readiness": {
+        "weight": 0.08, "pillars": ["OPS"],
+        "subcategories": {
+            "Skills": [
+                {"id": "CT-OPS-001", "q": "Team Control Tower experience?", "risk": "high",
+                 "opts": {"None": 1, "Training awareness": 2, "Sandbox hands-on": 3, "Production experience": 4, "Deep expertise": 5}},
+                {"id": "CT-OPS-002", "q": "Training plan for CT operations?", "risk": "medium",
+                 "opts": {"None": 1, "Self-paced": 2, "AWS training identified": 3, "Comprehensive program": 4, "Certification + KT": 5}},
+            ],
+            "Runbooks": [
+                {"id": "CT-OPS-003", "q": "Operational runbooks defined?", "risk": "medium",
+                 "opts": {"None": 1, "During implementation": 2, "Basic planned": 3, "Comprehensive automated": 4, "Full SSM automation": 5}},
+                {"id": "CT-OPS-004", "q": "Incident response process?", "risk": "medium",
+                 "opts": {"None": 1, "Ad-hoc": 2, "Escalation path": 3, "IR playbooks": 4, "Automated IR": 5}},
+            ],
+            "Change Management": [
+                {"id": "CT-OPS-005", "q": "Control Tower change management?", "risk": "medium",
+                 "opts": {"No process": 1, "Informal": 2, "Tickets + approval": 3, "CAB review": 4, "GitOps validation": 5}},
+                {"id": "CT-OPS-006", "q": "Control Tower upgrade approach?", "risk": "medium",
+                 "opts": {"No strategy": 1, "When issues": 2, "Monitor + periodic": 3, "Scheduled + testing": 4, "Automated rollback": 5}},
+            ]
+        }
+    },
+    "Data Protection": {
+        "weight": 0.07, "pillars": ["SEC"],
+        "subcategories": {
+            "Encryption": [
+                {"id": "CT-DAT-001", "q": "Encryption strategy at rest?", "risk": "critical",
+                 "opts": {"No requirements": 1, "AWS managed SSE": 2, "KMS AWS managed": 3, "Customer managed KMS": 4, "Centralized hierarchy rotation": 5}},
+                {"id": "CT-DAT-002", "q": "KMS management across accounts?", "risk": "high",
+                 "opts": {"No strategy": 1, "Account-local": 2, "Shared cross-account": 3, "Centralized key mgmt": 4, "Multi-region automated": 5}},
+            ],
+            "Classification": [
+                {"id": "CT-DAT-003", "q": "Data classification framework?", "risk": "high",
+                 "opts": {"None": 1, "Basic public/internal/confidential": 2, "With handling procedures": 3, "Technical controls mapping": 4, "Automated DLP": 5}},
+                {"id": "CT-DAT-004", "q": "Sensitive data discovery?", "risk": "high",
+                 "opts": {"None": 1, "Manual inventory": 2, "Macie for S3": 3, "Custom identifiers": 4, "Comprehensive DLP": 5}},
+            ]
+        }
     }
 }
 
-GOLDEN_ARCHITECTURE_DOMAINS = {
-    "Compute & Runtime": {
-        "weight": 0.25,
-        "questions": [
-            {
-                "id": "ga_comp_1",
-                "question": "What is your current serverless compute adoption level?",
-                "options": {
-                    "No serverless adoption": 1,
-                    "Experimental Lambda usage": 2,
-                    "Some production Lambda workloads": 3,
-                    "Significant serverless footprint": 4,
-                    "Serverless-first strategy implemented": 5
-                }
-            },
-            {
-                "id": "ga_comp_2",
-                "question": "How are Lambda functions organized and deployed?",
-                "options": {
-                    "Manual deployments through console": 1,
-                    "CLI-based deployments": 2,
-                    "SAM or Serverless Framework basics": 3,
-                    "Full CI/CD with SAM/CDK": 4,
-                    "GitOps with automated testing and deployment": 5
-                }
-            },
-            {
-                "id": "ga_comp_3",
-                "question": "What is your approach to Lambda layers and shared code?",
-                "options": {
-                    "No shared code strategy": 1,
-                    "Copy-paste code sharing": 2,
-                    "Some Lambda layers in use": 3,
-                    "Layer versioning with dependencies": 4,
-                    "Automated layer management with CI/CD": 5
-                }
-            },
-            {
-                "id": "ga_comp_4",
-                "question": "How do you handle container-based serverless (Fargate)?",
-                "options": {
-                    "No Fargate usage": 1,
-                    "Experimental Fargate deployments": 2,
-                    "Some Fargate in production": 3,
-                    "Fargate with ECS/EKS integration": 4,
-                    "Full serverless container strategy": 5
-                }
-            }
-        ]
+# =============================================================================
+# GOLDEN ARCHITECTURE (SERVERLESS) ASSESSMENT
+# =============================================================================
+GA_DOMAINS = {
+    "Serverless Compute": {
+        "weight": 0.15, "pillars": ["PERF", "COST", "OPS"],
+        "subcategories": {
+            "Lambda": [
+                {"id": "GA-CMP-001", "q": "Lambda adoption maturity?", "risk": "medium",
+                 "opts": {"No usage": 1, "Experimental": 2, "Production specific": 3, "Significant standards": 4, "Lambda-first strategy": 5}},
+                {"id": "GA-CMP-002", "q": "Lambda organization and management?", "risk": "medium",
+                 "opts": {"Ad-hoc": 1, "Naming conventions": 2, "Microservices-aligned": 3, "Domain-driven": 4, "Function mesh discovery": 5}},
+                {"id": "GA-CMP-003", "q": "Lambda runtime management?", "risk": "medium",
+                 "opts": {"Default no mgmt": 1, "Standard selection": 2, "Versioning + upgrade": 3, "Automated updates": 4, "Custom container": 5}},
+                {"id": "GA-CMP-004", "q": "Cold start handling?", "risk": "low",
+                 "opts": {"No consideration": 1, "Awareness only": 2, "Basic optimization": 3, "Provisioned concurrency": 4, "SnapStart + warming": 5}},
+                {"id": "GA-CMP-005", "q": "Lambda layers strategy?", "risk": "low",
+                 "opts": {"No layers": 1, "Some shared": 2, "Standard libraries": 3, "Versioned dependencies": 4, "Automated CI/CD": 5}},
+            ],
+            "Containers": [
+                {"id": "GA-CMP-006", "q": "Fargate adoption level?", "risk": "medium",
+                 "opts": {"None": 1, "Experimental": 2, "Specific workloads": 3, "Default containerized": 4, "Comprehensive + Spot": 5}},
+                {"id": "GA-CMP-007", "q": "Lambda vs Fargate decision framework?", "risk": "medium",
+                 "opts": {"No framework": 1, "Ad-hoc": 2, "Basic guidelines": 3, "Decision tree": 4, "Automated cost modeling": 5}},
+            ]
+        }
     },
     "API & Integration": {
-        "weight": 0.20,
-        "questions": [
-            {
-                "id": "ga_api_1",
-                "question": "What is your API Gateway adoption level?",
-                "options": {
-                    "No API Gateway usage": 1,
-                    "Basic REST APIs": 2,
-                    "REST APIs with authorization": 3,
-                    "HTTP APIs with advanced features": 4,
-                    "Full API management with versioning": 5
-                }
-            },
-            {
-                "id": "ga_api_2",
-                "question": "How are event-driven architectures implemented?",
-                "options": {
-                    "No event-driven patterns": 1,
-                    "Basic SNS/SQS usage": 2,
-                    "EventBridge for some integrations": 3,
-                    "Event-driven with patterns defined": 4,
-                    "Full event mesh with EventBridge": 5
-                }
-            },
-            {
-                "id": "ga_api_3",
-                "question": "What is your approach to Step Functions and orchestration?",
-                "options": {
-                    "No workflow orchestration": 1,
-                    "Basic Step Functions experimentation": 2,
-                    "Step Functions for some workflows": 3,
-                    "Standard and Express workflows": 4,
-                    "Full orchestration with error handling": 5
-                }
-            }
-        ]
+        "weight": 0.12, "pillars": ["PERF", "SEC", "REL"],
+        "subcategories": {
+            "API Gateway": [
+                {"id": "GA-API-001", "q": "API Gateway type standard?", "risk": "medium",
+                 "opts": {"No usage": 1, "REST all": 2, "HTTP default": 3, "Right-sized selection": 4, "Multi-type domains WAF": 5}},
+                {"id": "GA-API-002", "q": "API versioning management?", "risk": "medium",
+                 "opts": {"No versioning": 1, "URL path": 2, "Stage-based": 3, "Header routing": 4, "Comprehensive deprecation": 5}},
+                {"id": "GA-API-003", "q": "API documentation approach?", "risk": "low",
+                 "opts": {"None": 1, "Manual": 2, "OpenAPI specs": 3, "Auto-generated portal": 4, "Developer portal SDK": 5}},
+                {"id": "GA-API-004", "q": "Rate limiting configuration?", "risk": "high",
+                 "opts": {"None": 1, "Default limits": 2, "Custom per stage": 3, "Usage plans + keys": 4, "Dynamic quota mgmt": 5}},
+            ],
+            "Events": [
+                {"id": "GA-API-005", "q": "EventBridge adoption?", "risk": "medium",
+                 "opts": {"None": 1, "Basic buses": 2, "Custom + rules": 3, "Event-driven patterns": 4, "Event mesh + registry": 5}},
+                {"id": "GA-API-006", "q": "Event schema management?", "risk": "medium",
+                 "opts": {"None": 1, "Informal docs": 2, "Registry discovery": 3, "Versioning validation": 4, "Governance breaking change": 5}},
+                {"id": "GA-API-007", "q": "SQS/SNS patterns?", "risk": "medium",
+                 "opts": {"None": 1, "Basic queue": 2, "Fan-out SNS→SQS": 3, "DLQ + retry": 4, "FIFO exactly-once": 5}},
+            ]
+        }
     },
-    "Data & Storage": {
-        "weight": 0.20,
-        "questions": [
-            {
-                "id": "ga_data_1",
-                "question": "What serverless database services are you using?",
-                "options": {
-                    "Traditional RDS only": 1,
-                    "Some DynamoDB experimentation": 2,
-                    "DynamoDB in production": 3,
-                    "DynamoDB with Aurora Serverless": 4,
-                    "Full serverless data tier strategy": 5
-                }
-            },
-            {
-                "id": "ga_data_2",
-                "question": "How do you handle data lake and analytics serverlessly?",
-                "options": {
-                    "No serverless analytics": 1,
-                    "Basic S3 data storage": 2,
-                    "Athena for ad-hoc queries": 3,
-                    "Data lake with Glue and Athena": 4,
-                    "Full serverless analytics platform": 5
-                }
-            },
-            {
-                "id": "ga_data_3",
-                "question": "What is your caching strategy for serverless?",
-                "options": {
-                    "No caching strategy": 1,
-                    "Basic ElastiCache usage": 2,
-                    "DAX for DynamoDB": 3,
-                    "Multi-layer caching approach": 4,
-                    "Full caching with CloudFront + DAX": 5
-                }
-            }
-        ]
+    "Orchestration": {
+        "weight": 0.10, "pillars": ["REL", "OPS"],
+        "subcategories": {
+            "Step Functions": [
+                {"id": "GA-WRK-001", "q": "Step Functions adoption?", "risk": "medium",
+                 "opts": {"None": 1, "Experimental": 2, "Standard some": 3, "Orchestration standard": 4, "Express + callbacks": 5}},
+                {"id": "GA-WRK-002", "q": "Workflow error handling?", "risk": "high",
+                 "opts": {"None": 1, "Basic try-catch": 2, "Retry policies": 3, "Comprehensive fallbacks": 4, "Saga compensation": 5}},
+                {"id": "GA-WRK-003", "q": "Workflow patterns implemented?", "risk": "medium",
+                 "opts": {"None": 1, "Sequential only": 2, "Parallel + choice": 3, "Map dynamic": 4, "Callback human approval": 5}},
+            ]
+        }
     },
-    "Security & Compliance": {
-        "weight": 0.20,
-        "questions": [
-            {
-                "id": "ga_sec_1",
-                "question": "How are serverless function permissions managed?",
-                "options": {
-                    "Overly permissive IAM roles": 1,
-                    "Basic role separation": 2,
-                    "Least privilege attempted": 3,
-                    "IAM roles with resource policies": 4,
-                    "Fine-grained IAM with automated review": 5
-                }
-            },
-            {
-                "id": "ga_sec_2",
-                "question": "What is your approach to secrets management?",
-                "options": {
-                    "Hardcoded secrets": 1,
-                    "Environment variables only": 2,
-                    "Parameter Store usage": 3,
-                    "Secrets Manager with rotation": 4,
-                    "Full secrets management with audit": 5
-                }
-            },
-            {
-                "id": "ga_sec_3",
-                "question": "How do you handle API security and authentication?",
-                "options": {
-                    "No API authentication": 1,
-                    "API keys only": 2,
-                    "Cognito with basic setup": 3,
-                    "Cognito with custom authorizers": 4,
-                    "Full identity with WAF protection": 5
-                }
-            }
-        ]
+    "Data Layer": {
+        "weight": 0.12, "pillars": ["PERF", "REL", "COST"],
+        "subcategories": {
+            "DynamoDB": [
+                {"id": "GA-DAT-001", "q": "DynamoDB adoption level?", "risk": "medium",
+                 "opts": {"None": 1, "Specific cases": 2, "Default NoSQL": 3, "Advanced GSI transactions": 4, "Single-table patterns": 5}},
+                {"id": "GA-DAT-002", "q": "DynamoDB capacity management?", "risk": "medium",
+                 "opts": {"Not using": 1, "Provisioned manual": 2, "On-demand all": 3, "Right-sized auto-scale": 4, "Optimized reserved": 5}},
+                {"id": "GA-DAT-003", "q": "DynamoDB design patterns?", "risk": "medium",
+                 "opts": {"N/A": 1, "Simple key-value": 2, "Multiple tables": 3, "Single-table basic": 4, "GSI overloading": 5}},
+                {"id": "GA-DAT-004", "q": "DynamoDB caching?", "risk": "low",
+                 "opts": {"None": 1, "Application-level": 2, "ElastiCache front": 3, "DAX read-heavy": 4, "Multi-layer strategy": 5}},
+            ],
+            "Relational": [
+                {"id": "GA-DAT-005", "q": "Aurora Serverless usage?", "risk": "medium",
+                 "opts": {"None": 1, "Evaluating v2": 2, "Dev/test": 3, "Production": 4, "With Data API": 5}},
+                {"id": "GA-DAT-006", "q": "Database connections serverless?", "risk": "high",
+                 "opts": {"Direct connections": 1, "Lambda pooling": 2, "RDS Proxy": 3, "Proxy + IAM": 4, "Data API connectionless": 5}},
+            ],
+            "Analytics": [
+                {"id": "GA-DAT-007", "q": "Serverless analytics approach?", "risk": "low",
+                 "opts": {"None": 1, "Traditional": 2, "Athena ad-hoc": 3, "Data lake Glue": 4, "Comprehensive platform": 5}},
+            ]
+        }
     },
-    "Observability & DevOps": {
-        "weight": 0.15,
-        "questions": [
-            {
-                "id": "ga_obs_1",
-                "question": "What is your serverless monitoring approach?",
-                "options": {
-                    "Basic CloudWatch metrics only": 1,
-                    "CloudWatch with some custom metrics": 2,
-                    "CloudWatch Insights enabled": 3,
-                    "X-Ray tracing implemented": 4,
-                    "Full observability with custom dashboards": 5
-                }
-            },
-            {
-                "id": "ga_obs_2",
-                "question": "How mature is your serverless CI/CD pipeline?",
-                "options": {
-                    "Manual deployments": 1,
-                    "Basic CI/CD pipeline": 2,
-                    "Multi-stage deployments": 3,
-                    "Canary deployments implemented": 4,
-                    "Full GitOps with automated rollback": 5
-                }
-            },
-            {
-                "id": "ga_obs_3",
-                "question": "What is your approach to serverless testing?",
-                "options": {
-                    "No automated testing": 1,
-                    "Unit tests only": 2,
-                    "Unit + integration tests": 3,
-                    "Full testing with local emulation": 4,
-                    "Comprehensive testing with chaos engineering": 5
-                }
-            }
-        ]
+    "Serverless Security": {
+        "weight": 0.15, "pillars": ["SEC"],
+        "subcategories": {
+            "Function Security": [
+                {"id": "GA-SEC-001", "q": "Lambda execution roles?", "risk": "critical",
+                 "opts": {"Single role all": 1, "Broad per app": 2, "Function-specific": 3, "Least-privilege reviewed": 4, "Automated boundaries": 5}},
+                {"id": "GA-SEC-002", "q": "Code signing Lambda?", "risk": "high",
+                 "opts": {"None": 1, "Evaluating": 2, "Some functions": 3, "Validation policy": 4, "Mandatory CI/CD": 5}},
+                {"id": "GA-SEC-003", "q": "Lambda vulnerability management?", "risk": "high",
+                 "opts": {"No scanning": 1, "Manual review": 2, "CI/CD scanning": 3, "Inspector": 4, "Continuous auto-remediation": 5}},
+            ],
+            "Secrets": [
+                {"id": "GA-SEC-004", "q": "Secrets management?", "risk": "critical",
+                 "opts": {"Env vars plaintext": 1, "Encrypted env": 2, "Parameter Store": 3, "Secrets Manager rotation": 4, "Lambda extension caching": 5}},
+                {"id": "GA-SEC-005", "q": "Secret rotation?", "risk": "high",
+                 "opts": {"None": 1, "Manual when needed": 2, "Scheduled manual": 3, "Automated some": 4, "Automated all": 5}},
+            ],
+            "API Security": [
+                {"id": "GA-SEC-006", "q": "API authentication?", "risk": "critical",
+                 "opts": {"None": 1, "API keys only": 2, "Cognito User Pools": 3, "Lambda authorizers JWT": 4, "Multi-method fine-grained": 5}},
+                {"id": "GA-SEC-007", "q": "API traffic protection?", "risk": "high",
+                 "opts": {"None": 1, "Basic throttling": 2, "WAF managed rules": 3, "WAF custom": 4, "WAF + Shield + bot": 5}},
+                {"id": "GA-SEC-008", "q": "Input validation?", "risk": "high",
+                 "opts": {"None": 1, "Basic in code": 2, "API Gateway validation": 3, "Schema + sanitization": 4, "Comprehensive + WAF": 5}},
+            ]
+        }
+    },
+    "Observability": {
+        "weight": 0.10, "pillars": ["OPS", "REL"],
+        "subcategories": {
+            "Logging": [
+                {"id": "GA-OBS-001", "q": "Serverless logging structure?", "risk": "medium",
+                 "opts": {"Console.log": 1, "Basic timestamps": 2, "Structured JSON": 3, "Correlation IDs": 4, "Powertools comprehensive": 5}},
+                {"id": "GA-OBS-002", "q": "Log aggregation and analysis?", "risk": "medium",
+                 "opts": {"Console only": 1, "Logs Insights": 2, "Centralized S3/OpenSearch": 3, "Real-time analysis": 4, "ML anomaly": 5}},
+            ],
+            "Tracing": [
+                {"id": "GA-OBS-003", "q": "Distributed tracing approach?", "risk": "medium",
+                 "opts": {"None": 1, "X-Ray some": 2, "X-Ray all serverless": 3, "Custom segments annotations": 4, "Comprehensive service map": 5}},
+            ],
+            "Metrics": [
+                {"id": "GA-OBS-004", "q": "Custom metrics captured?", "risk": "medium",
+                 "opts": {"Default only": 1, "Some custom": 2, "Business EMF": 3, "Comprehensive dimensions": 4, "Real-time embedded": 5}},
+                {"id": "GA-OBS-005", "q": "Serverless dashboards?", "risk": "low",
+                 "opts": {"None": 1, "Basic function": 2, "Application-level": 3, "Service-level SLIs": 4, "Comprehensive drill-down": 5}},
+                {"id": "GA-OBS-006", "q": "SLOs/SLIs for serverless?", "risk": "medium",
+                 "opts": {"None": 1, "Informal targets": 2, "Key function SLIs": 3, "SLOs error budgets": 4, "Comprehensive automation": 5}},
+            ]
+        }
+    },
+    "CI/CD & DevOps": {
+        "weight": 0.10, "pillars": ["OPS"],
+        "subcategories": {
+            "Deployment": [
+                {"id": "GA-DEV-001", "q": "Serverless deployment approach?", "risk": "medium",
+                 "opts": {"Manual console": 1, "CLI-based": 2, "SAM/Serverless Framework": 3, "CDK multi-env": 4, "GitOps automated": 5}},
+                {"id": "GA-DEV-002", "q": "Infrastructure as Code?", "risk": "medium",
+                 "opts": {"None": 1, "Partial": 2, "Full SAM/CDK": 3, "Linting validation": 4, "Automated testing security": 5}},
+                {"id": "GA-DEV-003", "q": "Deployment strategies?", "risk": "high",
+                 "opts": {"All-at-once": 1, "Manual staged": 2, "Blue-green": 3, "Canary + metrics": 4, "Automated canary rollback": 5}},
+                {"id": "GA-DEV-004", "q": "Rollback handling?", "risk": "high",
+                 "opts": {"No capability": 1, "Manual redeploy": 2, "Automated on failure": 3, "Version aliases": 4, "Automated blast radius": 5}},
+            ],
+            "Testing": [
+                {"id": "GA-DEV-005", "q": "Serverless testing strategy?", "risk": "high",
+                 "opts": {"None": 1, "Unit only": 2, "Unit + integration": 3, "Comprehensive local": 4, "Full pyramid contracts": 5}},
+                {"id": "GA-DEV-006", "q": "Local development?", "risk": "low",
+                 "opts": {"Deploy to AWS": 1, "Limited local": 2, "SAM Local": 3, "LocalStack full": 4, "Comprehensive mocking": 5}},
+            ]
+        }
+    },
+    "Cost Optimization": {
+        "weight": 0.08, "pillars": ["COST"],
+        "subcategories": {
+            "Visibility": [
+                {"id": "GA-CST-001", "q": "Serverless cost visibility?", "risk": "medium",
+                 "opts": {"No tracking": 1, "Service-level": 2, "Function-level": 3, "Tagging per-app": 4, "Real-time per invocation": 5}},
+                {"id": "GA-CST-002", "q": "Cost anomaly detection?", "risk": "medium",
+                 "opts": {"None": 1, "Manual review": 2, "AWS Anomaly Detection": 3, "Custom alerting": 4, "Real-time auto-remediation": 5}},
+            ],
+            "Optimization": [
+                {"id": "GA-CST-003", "q": "Lambda memory optimization?", "risk": "low",
+                 "opts": {"Default": 1, "Manual testing": 2, "Power Tuning": 3, "Regular cycles": 4, "Automated monitoring": 5}},
+                {"id": "GA-CST-004", "q": "Unused resource cleanup?", "risk": "low",
+                 "opts": {"None": 1, "Manual periodic": 2, "Automated reporting": 3, "Scheduled approval": 4, "Automated lifecycle": 5}},
+                {"id": "GA-CST-005", "q": "Graviton utilization?", "risk": "low",
+                 "opts": {"Not aware": 1, "Evaluating": 2, "Some functions": 3, "Default compatible": 4, "Comprehensive strategy": 5}},
+            ]
+        }
+    },
+    "Resilience": {
+        "weight": 0.08, "pillars": ["REL"],
+        "subcategories": {
+            "Fault Tolerance": [
+                {"id": "GA-REL-001", "q": "Retry and error handling?", "risk": "high",
+                 "opts": {"None": 1, "Default Lambda": 2, "Custom backoff": 3, "Circuit breaker": 4, "Patterns + fallbacks": 5}},
+                {"id": "GA-REL-002", "q": "Dead letter queue configuration?", "risk": "medium",
+                 "opts": {"None": 1, "Some functions": 2, "All async": 3, "Monitoring alerting": 4, "Automated reprocessing": 5}},
+                {"id": "GA-REL-003", "q": "Idempotency implementation?", "risk": "high",
+                 "opts": {"None": 1, "Awareness only": 2, "Critical operations": 3, "Comprehensive tokens": 4, "Powertools all": 5}},
+            ],
+            "Multi-Region": [
+                {"id": "GA-REL-004", "q": "Multi-region strategy serverless?", "risk": "high",
+                 "opts": {"Single region": 1, "Data replicated DR": 2, "Active-passive manual": 3, "Active-passive automated": 4, "Active-active": 5}},
+                {"id": "GA-REL-005", "q": "Global data consistency?", "risk": "high",
+                 "opts": {"N/A single": 1, "Eventually consistent": 2, "Global Tables": 3, "Multi-region defined": 4, "Comprehensive patterns": 5}},
+            ]
+        }
     }
 }
 
+# =============================================================================
+# APPLICATION LOGIC
+# =============================================================================
 
-def calculate_domain_score(responses: Dict[str, int], domain_questions: List[Dict]) -> float:
-    """Calculate weighted score for a domain."""
-    if not responses:
-        return 0.0
-    
-    total_score = 0
-    answered = 0
-    
-    for question in domain_questions:
-        if question["id"] in responses:
-            total_score += responses[question["id"]]
-            answered += 1
-    
-    if answered == 0:
-        return 0.0
-    
-    return (total_score / (answered * 5)) * 100
+def init_state():
+    defaults = {
+        'ct_responses': {}, 'ga_responses': {}, 'ai_analysis': None,
+        'org_name': '', 'assessor_name': '', 'industry': 'technology', 'report': None
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
+def count_questions(domains):
+    return sum(len(q) for d in domains.values() for q in d["subcategories"].values())
 
-def calculate_overall_score(responses: Dict[str, int], domains: Dict) -> Dict[str, float]:
-    """Calculate overall assessment score."""
+def calc_scores(responses, domains):
     domain_scores = {}
-    weighted_total = 0
+    for dname, ddata in domains.items():
+        total, count = 0, 0
+        for questions in ddata["subcategories"].values():
+            for q in questions:
+                if q["id"] in responses:
+                    total += responses[q["id"]]
+                    count += 1
+        score = (total / (count * 5) * 100) if count > 0 else 0
+        domain_scores[dname] = {"score": score, "answered": count, 
+                                "total": sum(len(qs) for qs in ddata["subcategories"].values()),
+                                "weight": ddata["weight"]}
     
-    for domain_name, domain_data in domains.items():
-        score = calculate_domain_score(responses, domain_data["questions"])
-        domain_scores[domain_name] = score
-        weighted_total += score * domain_data["weight"]
-    
-    domain_scores["Overall"] = weighted_total
-    return domain_scores
+    weighted = sum(d["score"] * d["weight"] for d in domain_scores.values() if d["answered"] > 0)
+    total_weight = sum(d["weight"] for d in domain_scores.values() if d["answered"] > 0)
+    overall = weighted / total_weight if total_weight > 0 else 0
+    return {"overall": overall, "domains": domain_scores}
 
+def get_level(score):
+    if score >= 80: return "Optimized", "score-high"
+    if score >= 60: return "Managed", "score-medium"
+    if score >= 40: return "Developing", "score-medium"
+    return "Initial", "score-low"
 
-def get_maturity_level(score: float) -> tuple:
-    """Get maturity level based on score."""
-    if score >= 80:
-        return "Optimized", "score-high"
-    elif score >= 60:
-        return "Managed", "score-medium"
-    elif score >= 40:
-        return "Developing", "score-medium"
-    elif score >= 20:
-        return "Initial", "score-low"
-    else:
-        return "Ad-hoc", "score-low"
+def find_gaps(responses, domains):
+    gaps = []
+    for dname, ddata in domains.items():
+        for sname, questions in ddata["subcategories"].items():
+            for q in questions:
+                if q["id"] in responses and responses[q["id"]] <= 2:
+                    gaps.append({"id": q["id"], "domain": dname, "subcat": sname,
+                                "question": q["q"], "score": responses[q["id"]], "risk": q["risk"]})
+    risk_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    return sorted(gaps, key=lambda x: risk_order.get(x["risk"], 3))
 
-
-def render_score_gauge(score: float, label: str):
-    """Render a visual score gauge."""
-    level, css_class = get_maturity_level(score)
-    
-    color = "#00d4aa" if score >= 60 else "#ff9500" if score >= 40 else "#ff6b6b"
-    
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-value" style="color: {color};">{score:.0f}%</div>
-        <div class="metric-label">{label}</div>
-        <div class="score-badge {css_class}" style="margin-top: 0.5rem;">{level}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-def call_claude_api(prompt: str, system_prompt: str = None) -> str:
-    """Call Claude API for AI-driven analysis."""
+def call_ai(prompt):
     try:
         import anthropic
-        
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            return "⚠️ ANTHROPIC_API_KEY not configured. Please set the environment variable to enable AI analysis."
-        
-        client = anthropic.Anthropic(api_key=api_key)
-        
-        messages = [{"role": "user", "content": prompt}]
-        
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=4096,
-            system=system_prompt or "You are an expert AWS Solutions Architect specializing in Control Tower migrations and serverless golden architectures. Provide detailed, actionable insights.",
-            messages=messages
+        key = os.environ.get("ANTHROPIC_API_KEY")
+        if not key:
+            return "⚠️ Set ANTHROPIC_API_KEY in Streamlit secrets for AI analysis."
+        client = anthropic.Anthropic(api_key=key)
+        resp = client.messages.create(
+            model="claude-sonnet-4-20250514", max_tokens=8192,
+            system="You are an expert AWS Solutions Architect specializing in Control Tower and serverless architectures. Provide detailed, actionable enterprise recommendations.",
+            messages=[{"role": "user", "content": prompt}]
         )
-        
-        return response.content[0].text
-        
-    except ImportError:
-        return "⚠️ Anthropic library not installed. Run: pip install anthropic"
+        return resp.content[0].text
     except Exception as e:
-        return f"⚠️ AI Analysis Error: {str(e)}"
+        return f"⚠️ AI Error: {e}"
 
+def render_metric(value, label, suffix="%"):
+    color = "#00d4aa" if value >= 60 else "#ff9500" if value >= 40 else "#ff6b6b"
+    level, _ = get_level(value)
+    st.markdown(f'''<div class="metric-card">
+        <div class="metric-value" style="color:{color}">{value:.0f}{suffix}</div>
+        <div class="metric-label">{label}</div>
+        <div style="margin-top:0.5rem;color:{color}">{level}</div>
+    </div>''', unsafe_allow_html=True)
 
-def extract_document_content(uploaded_file) -> str:
-    """Extract content from uploaded documents."""
-    content = ""
-    file_type = uploaded_file.type
-    
-    try:
-        if file_type == "application/pdf":
-            try:
-                import pypdf
-                pdf_reader = pypdf.PdfReader(io.BytesIO(uploaded_file.read()))
-                for page in pdf_reader.pages:
-                    content += page.extract_text() + "\n"
-            except ImportError:
-                try:
-                    import PyPDF2
-                    pdf_reader = PyPDF2.PdfReader(io.BytesIO(uploaded_file.read()))
-                    for page in pdf_reader.pages:
-                        content += page.extract_text() + "\n"
-                except ImportError:
-                    content = "PDF extraction requires pypdf or PyPDF2 library."
-                    
-        elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            try:
-                import docx
-                doc = docx.Document(io.BytesIO(uploaded_file.read()))
-                for para in doc.paragraphs:
-                    content += para.text + "\n"
-            except ImportError:
-                content = "DOCX extraction requires python-docx library."
-                
-        elif file_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-            try:
-                from pptx import Presentation
-                prs = Presentation(io.BytesIO(uploaded_file.read()))
-                for slide in prs.slides:
-                    for shape in slide.shapes:
-                        if hasattr(shape, "text"):
-                            content += shape.text + "\n"
-            except ImportError:
-                content = "PPTX extraction requires python-pptx library."
-                
-        elif file_type in ["text/plain", "application/json"]:
-            content = uploaded_file.read().decode("utf-8")
+def render_assessment(domains, responses, prefix):
+    for dname, ddata in domains.items():
+        with st.expander(f"📁 {dname} (Weight: {ddata['weight']*100:.0f}%)"):
+            st.markdown(f'<div class="domain-header">{dname}</div>', unsafe_allow_html=True)
+            pillars = " ".join([f'<span class="pillar-tag pillar-{p}">{WA_PILLARS.get(p,p)}</span>' for p in ddata["pillars"]])
+            st.markdown(f"**Well-Architected:** {pillars}", unsafe_allow_html=True)
             
-    except Exception as e:
-        content = f"Error extracting content: {str(e)}"
-    
-    return content
+            for sname, questions in ddata["subcategories"].items():
+                st.markdown(f'<div class="subcat-header">{sname}</div>', unsafe_allow_html=True)
+                for q in questions:
+                    with st.container():
+                        st.markdown(f'<div class="question-card">', unsafe_allow_html=True)
+                        col1, col2 = st.columns([4, 1])
+                        with col1:
+                            st.markdown(f"**{q['id']}**: {q['q']}")
+                        with col2:
+                            st.markdown(f'<span class="risk-{q["risk"]}">{q["risk"].upper()}</span>', unsafe_allow_html=True)
+                        
+                        opts = list(q["opts"].keys())
+                        curr = 0
+                        if q["id"] in responses:
+                            curr_val = responses[q["id"]]
+                            for i, (opt, val) in enumerate(q["opts"].items()):
+                                if val == curr_val: curr = i; break
+                        
+                        sel = st.radio(f"_{q['id']}", opts, index=curr, 
+                                      key=f"{prefix}_{q['id']}", label_visibility="collapsed")
+                        responses[q["id"]] = q["opts"][sel]
+                        st.markdown('</div>', unsafe_allow_html=True)
 
-
-def generate_assessment_report(ct_scores: Dict, ga_scores: Dict, ai_analysis: str = None) -> str:
-    """Generate comprehensive assessment report."""
-    report = f"""
-# AWS Enterprise Assessment Report
-## Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
----
-
-# Executive Summary
-
-This assessment evaluates your organization's readiness for AWS Control Tower migration and Golden Architecture (Serverless) adoption.
-
----
-
-# Control Tower Migration Assessment
-
-## Overall Maturity Score: {ct_scores.get('Overall', 0):.1f}%
-### Maturity Level: {get_maturity_level(ct_scores.get('Overall', 0))[0]}
-
-### Domain Scores
-
-"""
-    
-    for domain, score in ct_scores.items():
-        if domain != "Overall":
-            level, _ = get_maturity_level(score)
-            report += f"- **{domain}**: {score:.1f}% ({level})\n"
-    
-    report += f"""
-
----
-
-# Golden Architecture (Serverless) Assessment
-
-## Overall Maturity Score: {ga_scores.get('Overall', 0):.1f}%
-### Maturity Level: {get_maturity_level(ga_scores.get('Overall', 0))[0]}
-
-### Domain Scores
-
-"""
-    
-    for domain, score in ga_scores.items():
-        if domain != "Overall":
-            level, _ = get_maturity_level(score)
-            report += f"- **{domain}**: {score:.1f}% ({level})\n"
-    
-    if ai_analysis:
-        report += f"""
-
----
-
-# AI-Driven Analysis & Recommendations
-
-{ai_analysis}
-"""
-    
-    report += f"""
-
----
-
-# Next Steps
-
-1. Review identified gaps and prioritize remediation
-2. Develop detailed implementation roadmap
-3. Establish governance framework
-4. Plan phased migration approach
-5. Define success metrics and KPIs
-
----
-
-*Report generated by AWS Enterprise Assessment Platform*
-"""
-    
-    return report
-
-
-# Main Application
+# =============================================================================
+# MAIN APPLICATION
+# =============================================================================
 def main():
+    init_state()
+    
     # Header
-    st.markdown("""
-    <div class="main-header">
+    st.markdown('''<div class="main-header">
         <h1>🏗️ AWS Enterprise Assessment Platform</h1>
-        <p>AI-Driven Control Tower Migration & Golden Architecture Assessment</p>
-    </div>
-    """, unsafe_allow_html=True)
+        <p>AI-Driven Control Tower & Golden Architecture Assessment | Enterprise Edition v2.0</p>
+    </div>''', unsafe_allow_html=True)
     
     # Sidebar
     with st.sidebar:
-        st.markdown("### 📋 Assessment Configuration")
-        
-        assessment_mode = st.radio(
-            "Select Assessment Mode",
-            ["🎯 Questionnaire-Based", "📄 Document Analysis", "🔄 Hybrid Assessment"],
-            index=0
-        )
-        
-        st.markdown("---")
-        
-        st.markdown("### 🏢 Organization Details")
-        org_name = st.text_input("Organization Name", placeholder="Enter organization name")
-        assessor_name = st.text_input("Assessor Name", placeholder="Enter your name")
+        st.markdown("### 📋 Configuration")
+        st.session_state.org_name = st.text_input("Organization", st.session_state.org_name)
+        st.session_state.assessor_name = st.text_input("Assessor", st.session_state.assessor_name)
+        st.session_state.industry = st.selectbox("Industry", list(BENCHMARKS.keys()),
+            format_func=lambda x: BENCHMARKS[x]["name"],
+            index=list(BENCHMARKS.keys()).index(st.session_state.industry))
         
         st.markdown("---")
+        st.markdown("### 📊 Progress")
+        ct_total = count_questions(CT_DOMAINS)
+        ct_done = len(st.session_state.ct_responses)
+        st.progress(ct_done/ct_total if ct_total else 0)
+        st.caption(f"Control Tower: {ct_done}/{ct_total}")
         
-        st.markdown("### ⚙️ AI Configuration")
-        enable_ai = st.checkbox("Enable AI Analysis", value=True)
-        
-        if enable_ai:
-            ai_detail_level = st.select_slider(
-                "Analysis Detail Level",
-                options=["Brief", "Standard", "Comprehensive"],
-                value="Standard"
-            )
+        ga_total = count_questions(GA_DOMAINS)
+        ga_done = len(st.session_state.ga_responses)
+        st.progress(ga_done/ga_total if ga_total else 0)
+        st.caption(f"Golden Arch: {ga_done}/{ga_total}")
         
         st.markdown("---")
-        
-        st.markdown("### 📊 Quick Stats")
-        ct_complete = len(st.session_state.ct_responses)
-        ct_total = sum(len(d["questions"]) for d in CONTROL_TOWER_DOMAINS.values())
-        ga_complete = len(st.session_state.ga_responses)
-        ga_total = sum(len(d["questions"]) for d in GOLDEN_ARCHITECTURE_DOMAINS.values())
-        
-        st.metric("Control Tower Progress", f"{ct_complete}/{ct_total}")
-        st.metric("Golden Arch Progress", f"{ga_complete}/{ga_total}")
+        st.metric("Total Questions", ct_total + ga_total)
+        st.metric("Answered", ct_done + ga_done)
     
-    # Main content tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "🎛️ Control Tower Assessment",
-        "⚡ Golden Architecture Assessment", 
-        "📄 Document Analysis",
-        "🤖 AI Insights",
-        "📊 Reports & Export"
-    ])
+    # Main Tabs
+    tabs = st.tabs(["📊 Dashboard", "🎛️ Control Tower", "⚡ Golden Architecture", 
+                    "🔍 Gaps", "🤖 AI Insights", "📄 Reports"])
     
-    # Tab 1: Control Tower Assessment
-    with tab1:
-        st.markdown("## Control Tower Migration Readiness Assessment")
-        st.markdown("Evaluate your organization's readiness for AWS Control Tower adoption.")
-        
-        for domain_name, domain_data in CONTROL_TOWER_DOMAINS.items():
-            with st.expander(f"📁 {domain_name}", expanded=False):
-                st.markdown(f'<div class="domain-header">{domain_name} (Weight: {domain_data["weight"]*100:.0f}%)</div>', unsafe_allow_html=True)
-                
-                for question in domain_data["questions"]:
-                    q_id = question["id"]
-                    st.markdown(f"**{question['question']}**")
-                    
-                    options = list(question["options"].keys())
-                    
-                    current_idx = 0
-                    if q_id in st.session_state.ct_responses:
-                        current_val = st.session_state.ct_responses[q_id]
-                        for idx, (opt, val) in enumerate(question["options"].items()):
-                            if val == current_val:
-                                current_idx = idx
-                                break
-                    
-                    selected = st.radio(
-                        f"Select response for {q_id}",
-                        options,
-                        index=current_idx,
-                        key=f"radio_{q_id}",
-                        label_visibility="collapsed"
-                    )
-                    
-                    st.session_state.ct_responses[q_id] = question["options"][selected]
-                    st.markdown("---")
-        
-        # Calculate and display scores
-        if st.session_state.ct_responses:
-            st.markdown("### 📈 Current Assessment Scores")
-            ct_scores = calculate_overall_score(st.session_state.ct_responses, CONTROL_TOWER_DOMAINS)
-            
-            cols = st.columns(3)
-            with cols[1]:
-                render_score_gauge(ct_scores["Overall"], "Overall Readiness")
-            
-            st.markdown("### Domain Breakdown")
-            domain_cols = st.columns(len(ct_scores) - 1)
-            for idx, (domain, score) in enumerate(ct_scores.items()):
-                if domain != "Overall":
-                    with domain_cols[idx % len(domain_cols)]:
-                        render_score_gauge(score, domain[:20])
-    
-    # Tab 2: Golden Architecture Assessment
-    with tab2:
-        st.markdown("## Golden Architecture (Serverless) Assessment")
-        st.markdown("Evaluate your serverless architecture maturity and readiness.")
-        
-        for domain_name, domain_data in GOLDEN_ARCHITECTURE_DOMAINS.items():
-            with st.expander(f"📁 {domain_name}", expanded=False):
-                st.markdown(f'<div class="domain-header">{domain_name} (Weight: {domain_data["weight"]*100:.0f}%)</div>', unsafe_allow_html=True)
-                
-                for question in domain_data["questions"]:
-                    q_id = question["id"]
-                    st.markdown(f"**{question['question']}**")
-                    
-                    options = list(question["options"].keys())
-                    
-                    current_idx = 0
-                    if q_id in st.session_state.ga_responses:
-                        current_val = st.session_state.ga_responses[q_id]
-                        for idx, (opt, val) in enumerate(question["options"].items()):
-                            if val == current_val:
-                                current_idx = idx
-                                break
-                    
-                    selected = st.radio(
-                        f"Select response for {q_id}",
-                        options,
-                        index=current_idx,
-                        key=f"radio_{q_id}",
-                        label_visibility="collapsed"
-                    )
-                    
-                    st.session_state.ga_responses[q_id] = question["options"][selected]
-                    st.markdown("---")
-        
-        # Calculate and display scores
-        if st.session_state.ga_responses:
-            st.markdown("### 📈 Current Assessment Scores")
-            ga_scores = calculate_overall_score(st.session_state.ga_responses, GOLDEN_ARCHITECTURE_DOMAINS)
-            
-            cols = st.columns(3)
-            with cols[1]:
-                render_score_gauge(ga_scores["Overall"], "Overall Maturity")
-            
-            st.markdown("### Domain Breakdown")
-            domain_cols = st.columns(len(ga_scores) - 1)
-            for idx, (domain, score) in enumerate(ga_scores.items()):
-                if domain != "Overall":
-                    with domain_cols[idx % len(domain_cols)]:
-                        render_score_gauge(score, domain[:20])
-    
-    # Tab 3: Document Analysis
-    with tab3:
-        st.markdown("## 📄 Document-Based Assessment")
-        st.markdown("Upload existing documentation for AI-powered analysis and gap identification.")
-        
-        st.markdown("""
-        <div class="upload-zone">
-            <h3>📤 Upload Assessment Documents</h3>
-            <p>Supported formats: PDF, DOCX, PPTX, TXT, JSON</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        uploaded_files = st.file_uploader(
-            "Upload your documents",
-            type=["pdf", "docx", "pptx", "txt", "json"],
-            accept_multiple_files=True,
-            label_visibility="collapsed"
-        )
-        
-        if uploaded_files:
-            st.markdown("### 📑 Uploaded Documents")
-            
-            all_content = ""
-            for file in uploaded_files:
-                with st.expander(f"📄 {file.name}"):
-                    content = extract_document_content(file)
-                    all_content += f"\n\n--- Document: {file.name} ---\n{content}"
-                    st.text_area("Content Preview", content[:2000] + "..." if len(content) > 2000 else content, height=200)
-            
-            st.session_state.document_content = all_content
-            
-            if st.button("🤖 Analyze Documents with AI", type="primary"):
-                with st.spinner("Analyzing documents..."):
-                    analysis_prompt = f"""
-Analyze the following AWS-related documentation and provide a comprehensive assessment for:
-
-1. **Control Tower Migration Readiness**:
-   - Current multi-account strategy
-   - Governance and guardrails maturity
-   - Security and identity posture
-   - Network architecture readiness
-   - Operational capabilities
-
-2. **Golden Architecture (Serverless) Readiness**:
-   - Serverless compute adoption
-   - API and integration patterns
-   - Data and storage architecture
-   - Security implementation
-   - Observability and DevOps maturity
-
-For each area, provide:
-- Current state assessment (1-5 scale)
-- Key gaps identified
-- Specific recommendations
-- Priority ranking (High/Medium/Low)
-
-Documentation Content:
-{all_content[:15000]}
-
-Provide structured, actionable insights for enterprise implementation.
-"""
-                    
-                    analysis = call_claude_api(analysis_prompt)
-                    st.session_state.ai_analysis = analysis
-                    
-                    st.markdown("### 🔍 AI Analysis Results")
-                    st.markdown(f"""
-                    <div class="ai-response">
-                        {analysis}
-                    </div>
-                    """, unsafe_allow_html=True)
-    
-    # Tab 4: AI Insights
-    with tab4:
-        st.markdown("## 🤖 AI-Driven Insights & Recommendations")
-        
-        ct_scores = calculate_overall_score(st.session_state.ct_responses, CONTROL_TOWER_DOMAINS) if st.session_state.ct_responses else {}
-        ga_scores = calculate_overall_score(st.session_state.ga_responses, GOLDEN_ARCHITECTURE_DOMAINS) if st.session_state.ga_responses else {}
-        
-        if ct_scores or ga_scores:
-            st.markdown("### 📊 Assessment Summary for AI Analysis")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**Control Tower Scores:**")
-                for domain, score in ct_scores.items():
-                    st.write(f"- {domain}: {score:.1f}%")
-            with col2:
-                st.markdown("**Golden Architecture Scores:**")
-                for domain, score in ga_scores.items():
-                    st.write(f"- {domain}: {score:.1f}%")
-        
-        analysis_type = st.selectbox(
-            "Select Analysis Type",
-            [
-                "🎯 Gap Analysis & Prioritization",
-                "🗺️ Implementation Roadmap",
-                "⚠️ Risk Assessment",
-                "💰 Cost-Benefit Analysis",
-                "🏗️ Architecture Recommendations",
-                "📋 Compliance Mapping"
-            ]
-        )
-        
-        custom_context = st.text_area(
-            "Additional Context (optional)",
-            placeholder="Enter any additional context about your organization, constraints, or specific requirements...",
-            height=100
-        )
-        
-        if st.button("🚀 Generate AI Analysis", type="primary"):
-            with st.spinner("Generating comprehensive analysis..."):
-                
-                scores_summary = f"""
-Control Tower Assessment Scores:
-{json.dumps(ct_scores, indent=2) if ct_scores else "Not completed"}
-
-Golden Architecture Assessment Scores:
-{json.dumps(ga_scores, indent=2) if ga_scores else "Not completed"}
-"""
-                
-                analysis_prompts = {
-                    "🎯 Gap Analysis & Prioritization": f"""
-Based on the following assessment scores, provide a detailed gap analysis:
-
-{scores_summary}
-
-Additional Context: {custom_context or "None provided"}
-
-Please provide:
-1. **Critical Gaps** (Score < 40%): Immediate attention required
-2. **Moderate Gaps** (Score 40-60%): Short-term focus areas
-3. **Minor Gaps** (Score 60-80%): Optimization opportunities
-4. **Strengths** (Score > 80%): Areas to leverage
-
-For each gap:
-- Root cause analysis
-- Business impact assessment
-- Recommended remediation steps
-- Estimated effort (T-shirt sizing)
-- Dependencies and prerequisites
-""",
-                    "🗺️ Implementation Roadmap": f"""
-Based on the assessment scores, create a detailed implementation roadmap:
-
-{scores_summary}
-
-Additional Context: {custom_context or "None provided"}
-
-Provide a phased approach:
-
-**Phase 1: Foundation (Months 1-3)**
-- Quick wins and prerequisites
-- Resource requirements
-- Key milestones
-
-**Phase 2: Core Implementation (Months 4-6)**
-- Control Tower deployment steps
-- Serverless architecture migration
-- Governance framework
-
-**Phase 3: Optimization (Months 7-12)**
-- Advanced features
-- Automation enhancement
-- Continuous improvement
-
-Include dependencies, risks, and success metrics for each phase.
-""",
-                    "⚠️ Risk Assessment": f"""
-Perform a comprehensive risk assessment based on:
-
-{scores_summary}
-
-Additional Context: {custom_context or "None provided"}
-
-Analyze risks across:
-1. **Technical Risks**: Architecture, integration, complexity
-2. **Operational Risks**: Skills gap, change management, BAU impact
-3. **Security Risks**: Compliance, data protection, access control
-4. **Financial Risks**: Cost overruns, resource constraints
-5. **Timeline Risks**: Dependencies, scope creep
-
-For each risk provide:
-- Probability (High/Medium/Low)
-- Impact (High/Medium/Low)
-- Mitigation strategies
-- Contingency plans
-""",
-                    "💰 Cost-Benefit Analysis": f"""
-Provide a cost-benefit analysis for the migration:
-
-{scores_summary}
-
-Additional Context: {custom_context or "None provided"}
-
-Include:
-1. **Cost Categories**:
-   - Implementation costs (labor, tooling, training)
-   - Migration costs (data transfer, parallel running)
-   - Ongoing operational costs
-   - Opportunity costs
-
-2. **Benefits**:
-   - Operational efficiency gains
-   - Security posture improvement
-   - Compliance automation
-   - Cost optimization potential
-   - Innovation enablement
-
-3. **ROI Calculation Framework**
-4. **Break-even Analysis**
-5. **TCO Comparison**
-""",
-                    "🏗️ Architecture Recommendations": f"""
-Provide detailed architecture recommendations based on:
-
-{scores_summary}
-
-Additional Context: {custom_context or "None provided"}
-
-Cover:
-1. **Control Tower Architecture**:
-   - OU structure recommendation
-   - Account factory design
-   - Guardrail selection
-   - Network topology
-
-2. **Golden Architecture (Serverless)**:
-   - Reference architecture patterns
-   - Service selection guidance
-   - Integration patterns
-   - Data architecture
-
-3. **Cross-cutting Concerns**:
-   - Security architecture
-   - Observability strategy
-   - CI/CD pipeline design
-   - Disaster recovery
-
-Include architecture diagrams descriptions and implementation notes.
-""",
-                    "📋 Compliance Mapping": f"""
-Map compliance requirements to implementation:
-
-{scores_summary}
-
-Additional Context: {custom_context or "None provided"}
-
-Provide mapping for common frameworks:
-1. **SOC 2**: Control mapping to CT guardrails
-2. **PCI DSS**: Relevant controls and implementation
-3. **HIPAA**: Security and privacy requirements
-4. **GDPR**: Data protection considerations
-5. **AWS Well-Architected**: Pillar alignment
-
-For each:
-- Current compliance gaps
-- Control Tower controls that address requirements
-- Additional controls needed
-- Evidence collection automation
-"""
-                }
-                
-                selected_prompt = analysis_prompts.get(analysis_type, analysis_prompts["🎯 Gap Analysis & Prioritization"])
-                
-                analysis_result = call_claude_api(selected_prompt)
-                st.session_state.ai_analysis = analysis_result
-                
-                st.markdown("### 📋 Analysis Results")
-                st.markdown(f"""
-                <div class="ai-response">
-                    <h4>🤖 AI-Generated {analysis_type}</h4>
-                </div>
-                """, unsafe_allow_html=True)
-                st.markdown(analysis_result)
-    
-    # Tab 5: Reports & Export
-    with tab5:
-        st.markdown("## 📊 Assessment Reports & Export")
-        
-        ct_scores = calculate_overall_score(st.session_state.ct_responses, CONTROL_TOWER_DOMAINS) if st.session_state.ct_responses else {}
-        ga_scores = calculate_overall_score(st.session_state.ga_responses, GOLDEN_ARCHITECTURE_DOMAINS) if st.session_state.ga_responses else {}
-        
-        # Summary Dashboard
-        st.markdown("### 📈 Assessment Dashboard")
+    # Dashboard
+    with tabs[0]:
+        st.markdown("## 📊 Executive Dashboard")
+        ct_scores = calc_scores(st.session_state.ct_responses, CT_DOMAINS) if st.session_state.ct_responses else {"overall": 0}
+        ga_scores = calc_scores(st.session_state.ga_responses, GA_DOMAINS) if st.session_state.ga_responses else {"overall": 0}
         
         col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            ct_overall = ct_scores.get("Overall", 0)
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value" style="color: {'#00d4aa' if ct_overall >= 60 else '#ff9500' if ct_overall >= 40 else '#ff6b6b'};">
-                    {ct_overall:.0f}%
-                </div>
-                <div class="metric-label">Control Tower</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            ga_overall = ga_scores.get("Overall", 0)
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value" style="color: {'#00d4aa' if ga_overall >= 60 else '#ff9500' if ga_overall >= 40 else '#ff6b6b'};">
-                    {ga_overall:.0f}%
-                </div>
-                <div class="metric-label">Golden Architecture</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            combined = (ct_overall + ga_overall) / 2 if ct_overall and ga_overall else ct_overall or ga_overall
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value" style="color: {'#00d4aa' if combined >= 60 else '#ff9500' if combined >= 40 else '#ff6b6b'};">
-                    {combined:.0f}%
-                </div>
-                <div class="metric-label">Combined Score</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
+        with col1: render_metric(ct_scores["overall"], "Control Tower")
+        with col2: render_metric(ga_scores["overall"], "Golden Architecture")
+        with col3: render_metric((ct_scores["overall"]+ga_scores["overall"])/2, "Combined")
         with col4:
-            level, _ = get_maturity_level(combined)
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value" style="font-size: 1.5rem; color: #ff9500;">
-                    {level}
-                </div>
-                <div class="metric-label">Maturity Level</div>
-            </div>
-            """, unsafe_allow_html=True)
+            bench = BENCHMARKS[st.session_state.industry]
+            combined = (ct_scores["overall"]+ga_scores["overall"])/2
+            vs_avg = combined - bench["avg"]
+            st.markdown(f'''<div class="metric-card">
+                <div class="metric-value" style="color:{"#00d4aa" if vs_avg>=0 else "#ff6b6b"}">{vs_avg:+.0f}%</div>
+                <div class="metric-label">vs {bench["name"]} Avg</div>
+            </div>''', unsafe_allow_html=True)
         
         st.markdown("---")
-        
-        # Export Options
-        st.markdown("### 📥 Export Options")
-        
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("### Control Tower Domains")
+            if "domains" in ct_scores:
+                for dname, data in ct_scores["domains"].items():
+                    level, _ = get_level(data["score"])
+                    st.markdown(f"**{dname}**: {data['score']:.0f}% ({level})")
+                    st.progress(data["score"]/100)
+        with col2:
+            st.markdown("### Golden Architecture Domains")
+            if "domains" in ga_scores:
+                for dname, data in ga_scores["domains"].items():
+                    level, _ = get_level(data["score"])
+                    st.markdown(f"**{dname}**: {data['score']:.0f}% ({level})")
+                    st.progress(data["score"]/100)
+    
+    # Control Tower Assessment
+    with tabs[1]:
+        st.markdown(f"## 🎛️ Control Tower Assessment ({count_questions(CT_DOMAINS)} questions)")
+        render_assessment(CT_DOMAINS, st.session_state.ct_responses, "ct")
+    
+    # Golden Architecture Assessment
+    with tabs[2]:
+        st.markdown(f"## ⚡ Golden Architecture Assessment ({count_questions(GA_DOMAINS)} questions)")
+        render_assessment(GA_DOMAINS, st.session_state.ga_responses, "ga")
+    
+    # Gaps
+    with tabs[3]:
+        st.markdown("## 🔍 Gap Analysis")
+        col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("📄 Generate Full Report", type="primary"):
-                report = generate_assessment_report(ct_scores, ga_scores, st.session_state.ai_analysis)
-                st.session_state.generated_report = report
-                st.success("Report generated successfully!")
+            st.markdown("### Control Tower Gaps")
+            ct_gaps = find_gaps(st.session_state.ct_responses, CT_DOMAINS)
+            if ct_gaps:
+                critical = len([g for g in ct_gaps if g["risk"]=="critical"])
+                high = len([g for g in ct_gaps if g["risk"]=="high"])
+                st.error(f"🔴 Critical: {critical} | 🟠 High: {high}")
+                for g in ct_gaps[:10]:
+                    with st.expander(f"{g['id']} - {g['domain'][:25]}..."):
+                        st.markdown(f"**{g['question']}**")
+                        st.markdown(f"Score: {g['score']}/5 | Risk: **{g['risk'].upper()}**")
+            else:
+                st.success("No critical gaps identified")
         
         with col2:
-            if st.button("📊 Export Raw Data (JSON)"):
-                export_data = {
-                    "metadata": {
-                        "generated_at": datetime.now().isoformat(),
-                        "organization": org_name,
-                        "assessor": assessor_name
-                    },
-                    "control_tower": {
-                        "responses": st.session_state.ct_responses,
-                        "scores": ct_scores
-                    },
-                    "golden_architecture": {
-                        "responses": st.session_state.ga_responses,
-                        "scores": ga_scores
-                    },
-                    "ai_analysis": st.session_state.ai_analysis
-                }
-                st.download_button(
-                    "⬇️ Download JSON",
-                    json.dumps(export_data, indent=2),
-                    file_name=f"aws_assessment_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    mime="application/json"
-                )
+            st.markdown("### Golden Architecture Gaps")
+            ga_gaps = find_gaps(st.session_state.ga_responses, GA_DOMAINS)
+            if ga_gaps:
+                critical = len([g for g in ga_gaps if g["risk"]=="critical"])
+                high = len([g for g in ga_gaps if g["risk"]=="high"])
+                st.error(f"🔴 Critical: {critical} | 🟠 High: {high}")
+                for g in ga_gaps[:10]:
+                    with st.expander(f"{g['id']} - {g['domain'][:25]}..."):
+                        st.markdown(f"**{g['question']}**")
+                        st.markdown(f"Score: {g['score']}/5 | Risk: **{g['risk'].upper()}**")
+            else:
+                st.success("No critical gaps identified")
+    
+    # AI Insights
+    with tabs[4]:
+        st.markdown("## 🤖 AI-Driven Analysis")
         
-        with col3:
-            if 'generated_report' in st.session_state:
-                st.download_button(
-                    "⬇️ Download Report (MD)",
-                    st.session_state.generated_report,
-                    file_name=f"aws_assessment_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
-                    mime="text/markdown"
-                )
+        analysis_type = st.selectbox("Analysis Type", [
+            "🎯 Gap Analysis & Prioritization",
+            "🗺️ Implementation Roadmap",
+            "⚠️ Risk Assessment",
+            "💰 Cost-Benefit Analysis",
+            "🏗️ Architecture Recommendations"
+        ])
         
-        # Display generated report
-        if 'generated_report' in st.session_state:
-            st.markdown("---")
-            st.markdown("### 📋 Generated Report Preview")
-            with st.expander("View Full Report", expanded=True):
-                st.markdown(st.session_state.generated_report)
+        context = st.text_area("Additional Context", placeholder="Add specific constraints, timeline, or requirements...")
         
-        # Detailed Domain Analysis
-        st.markdown("---")
-        st.markdown("### 📊 Detailed Domain Analysis")
-        
-        tab_ct, tab_ga = st.tabs(["Control Tower Domains", "Golden Architecture Domains"])
-        
-        with tab_ct:
-            if ct_scores:
-                for domain, score in ct_scores.items():
-                    if domain != "Overall":
-                        level, css_class = get_maturity_level(score)
-                        with st.expander(f"{domain}: {score:.1f}% ({level})"):
-                            st.progress(score / 100)
-                            
-                            # Show question responses
-                            domain_data = CONTROL_TOWER_DOMAINS.get(domain, {})
-                            for q in domain_data.get("questions", []):
-                                if q["id"] in st.session_state.ct_responses:
-                                    response_val = st.session_state.ct_responses[q["id"]]
-                                    response_text = [k for k, v in q["options"].items() if v == response_val][0]
-                                    st.markdown(f"**Q:** {q['question']}")
-                                    st.markdown(f"**A:** {response_text} (Score: {response_val}/5)")
-                                    st.markdown("---")
-        
-        with tab_ga:
-            if ga_scores:
-                for domain, score in ga_scores.items():
-                    if domain != "Overall":
-                        level, css_class = get_maturity_level(score)
-                        with st.expander(f"{domain}: {score:.1f}% ({level})"):
-                            st.progress(score / 100)
-                            
-                            # Show question responses
-                            domain_data = GOLDEN_ARCHITECTURE_DOMAINS.get(domain, {})
-                            for q in domain_data.get("questions", []):
-                                if q["id"] in st.session_state.ga_responses:
-                                    response_val = st.session_state.ga_responses[q["id"]]
-                                    response_text = [k for k, v in q["options"].items() if v == response_val][0]
-                                    st.markdown(f"**Q:** {q['question']}")
-                                    st.markdown(f"**A:** {response_text} (Score: {response_val}/5)")
-                                    st.markdown("---")
+        if st.button("🚀 Generate AI Analysis", type="primary"):
+            if not st.session_state.ct_responses and not st.session_state.ga_responses:
+                st.warning("Complete some assessment questions first.")
+            else:
+                with st.spinner("Generating analysis..."):
+                    ct_scores = calc_scores(st.session_state.ct_responses, CT_DOMAINS)
+                    ga_scores = calc_scores(st.session_state.ga_responses, GA_DOMAINS)
+                    ct_gaps = find_gaps(st.session_state.ct_responses, CT_DOMAINS)
+                    ga_gaps = find_gaps(st.session_state.ga_responses, GA_DOMAINS)
+                    
+                    prompt = f"""
+AWS Enterprise Assessment Analysis Request: {analysis_type}
 
+CONTROL TOWER SCORES:
+- Overall: {ct_scores['overall']:.1f}%
+- Domains: {json.dumps({k: v['score'] for k,v in ct_scores.get('domains',{}).items()}, indent=2)}
+
+GOLDEN ARCHITECTURE SCORES:
+- Overall: {ga_scores['overall']:.1f}%  
+- Domains: {json.dumps({k: v['score'] for k,v in ga_scores.get('domains',{}).items()}, indent=2)}
+
+CRITICAL GAPS:
+Control Tower: {len([g for g in ct_gaps if g['risk']=='critical'])} critical, {len([g for g in ct_gaps if g['risk']=='high'])} high
+{json.dumps(ct_gaps[:5], indent=2)}
+
+Golden Architecture: {len([g for g in ga_gaps if g['risk']=='critical'])} critical, {len([g for g in ga_gaps if g['risk']=='high'])} high
+{json.dumps(ga_gaps[:5], indent=2)}
+
+Organization: {st.session_state.org_name or 'Not specified'}
+Industry: {BENCHMARKS[st.session_state.industry]['name']}
+Additional Context: {context or 'None'}
+
+Provide comprehensive, actionable enterprise-grade recommendations with specific AWS services, timelines, and effort estimates.
+"""
+                    st.session_state.ai_analysis = call_ai(prompt)
+        
+        if st.session_state.ai_analysis:
+            st.markdown("---")
+            st.markdown("### 📋 AI Analysis Results")
+            st.markdown(st.session_state.ai_analysis)
+    
+    # Reports
+    with tabs[5]:
+        st.markdown("## 📄 Assessment Reports")
+        
+        ct_scores = calc_scores(st.session_state.ct_responses, CT_DOMAINS) if st.session_state.ct_responses else {"overall": 0}
+        ga_scores = calc_scores(st.session_state.ga_responses, GA_DOMAINS) if st.session_state.ga_responses else {"overall": 0}
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1: render_metric(ct_scores["overall"], "Control Tower")
+        with col2: render_metric(ga_scores["overall"], "Golden Arch")
+        with col3: render_metric((ct_scores["overall"]+ga_scores["overall"])/2, "Combined")
+        with col4:
+            total = len(st.session_state.ct_responses) + len(st.session_state.ga_responses)
+            max_q = count_questions(CT_DOMAINS) + count_questions(GA_DOMAINS)
+            render_metric(total/max_q*100 if max_q else 0, "Completion")
+        
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📊 Generate Report", type="primary", use_container_width=True):
+                ct_gaps = find_gaps(st.session_state.ct_responses, CT_DOMAINS)
+                ga_gaps = find_gaps(st.session_state.ga_responses, GA_DOMAINS)
+                
+                report = f"""# AWS Enterprise Assessment Report
+
+**Organization:** {st.session_state.org_name or 'N/A'}
+**Assessor:** {st.session_state.assessor_name or 'N/A'}
+**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M')}
+**Industry:** {BENCHMARKS[st.session_state.industry]['name']}
+
+---
+
+## Executive Summary
+
+| Assessment | Score | Level |
+|------------|-------|-------|
+| Control Tower | {ct_scores['overall']:.1f}% | {get_level(ct_scores['overall'])[0]} |
+| Golden Architecture | {ga_scores['overall']:.1f}% | {get_level(ga_scores['overall'])[0]} |
+| **Combined** | **{(ct_scores['overall']+ga_scores['overall'])/2:.1f}%** | **{get_level((ct_scores['overall']+ga_scores['overall'])/2)[0]}** |
+
+---
+
+## Gap Summary
+
+### Control Tower
+- Critical Gaps: {len([g for g in ct_gaps if g['risk']=='critical'])}
+- High Priority: {len([g for g in ct_gaps if g['risk']=='high'])}
+- Medium Priority: {len([g for g in ct_gaps if g['risk']=='medium'])}
+
+### Golden Architecture
+- Critical Gaps: {len([g for g in ga_gaps if g['risk']=='critical'])}
+- High Priority: {len([g for g in ga_gaps if g['risk']=='high'])}
+- Medium Priority: {len([g for g in ga_gaps if g['risk']=='medium'])}
+
+---
+
+## AI Analysis
+
+{st.session_state.ai_analysis or 'Generate AI analysis in the AI Insights tab.'}
+
+---
+
+*Generated by AWS Enterprise Assessment Platform v2.0*
+"""
+                st.session_state.report = report
+                st.success("Report generated!")
+        
+        with col2:
+            if st.session_state.report:
+                st.download_button("⬇️ Download Report", st.session_state.report,
+                    f"aws_assessment_{datetime.now().strftime('%Y%m%d')}.md", "text/markdown",
+                    use_container_width=True)
+            
+            export_data = {
+                "metadata": {"date": datetime.now().isoformat(), "org": st.session_state.org_name},
+                "control_tower": {"responses": st.session_state.ct_responses, "scores": ct_scores},
+                "golden_architecture": {"responses": st.session_state.ga_responses, "scores": ga_scores}
+            }
+            st.download_button("⬇️ Export JSON", json.dumps(export_data, indent=2, default=str),
+                f"aws_assessment_{datetime.now().strftime('%Y%m%d')}.json", "application/json",
+                use_container_width=True)
+        
+        if st.session_state.report:
+            st.markdown("---")
+            with st.expander("📋 Report Preview"):
+                st.markdown(st.session_state.report)
 
 if __name__ == "__main__":
     main()
