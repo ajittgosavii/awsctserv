@@ -7,7 +7,31 @@ Comprehensive Control Tower & Golden Architecture Assessment
 import streamlit as st
 import json
 import os
+import io
+import numpy as np
 from datetime import datetime
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch, cm
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, 
+    PageBreak, Image, ListFlowable, ListItem, KeepTogether
+)
+from reportlab.graphics.shapes import Drawing, Rect, String, Line
+from reportlab.graphics.charts.piecharts import Pie
+from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.pdfgen import canvas
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from matplotlib.patches import FancyBboxPatch, Circle, Wedge
+from matplotlib.collections import PatchCollection
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 
 st.set_page_config(
     page_title="AWS Enterprise Assessment Platform",
@@ -1128,6 +1152,7 @@ def init_state():
         st.session_state.assessor_name = ''
         st.session_state.industry = 'technology'
         st.session_state.report = None
+        st.session_state.pdf_report = None
 
 def count_questions(domains: dict) -> int:
     """Count total questions across all domains"""
@@ -1329,6 +1354,2262 @@ Provide detailed, actionable recommendations with:
         return f"⚠️ **Error**: {str(e)}"
 
 # =============================================================================
+# CHART GENERATION FUNCTIONS
+# =============================================================================
+
+def create_gauge_chart(score, title, size=(4, 3)):
+    """Create a beautiful gauge/speedometer chart for scores"""
+    fig, ax = plt.subplots(figsize=size, subplot_kw={'projection': 'polar'})
+    
+    # Colors for different score ranges
+    colors_gradient = ['#DC2626', '#EA580C', '#D97706', '#CA8A04', '#65A30D', '#059669']
+    
+    # Set up the gauge
+    ax.set_theta_zero_location('N')
+    ax.set_theta_direction(-1)
+    ax.set_thetamin(0)
+    ax.set_thetamax(180)
+    
+    # Create the background arc segments
+    theta_ranges = np.linspace(0, np.pi, 7)
+    for i in range(6):
+        theta = np.linspace(theta_ranges[i], theta_ranges[i+1], 50)
+        r = np.ones_like(theta) * 0.9
+        ax.fill_between(theta, 0.6, r, color=colors_gradient[i], alpha=0.3)
+    
+    # Add the score indicator
+    score_angle = np.pi * (1 - score / 100)
+    ax.annotate('', xy=(score_angle, 0.85), xytext=(np.pi/2, 0),
+                arrowprops=dict(arrowstyle='->', color='#1e293b', lw=3))
+    
+    # Add score text in center
+    ax.text(np.pi/2, 0.25, f'{score:.0f}%', ha='center', va='center', 
+            fontsize=24, fontweight='bold', color='#1e293b')
+    ax.text(np.pi/2, 0.05, title, ha='center', va='center', 
+            fontsize=10, color='#64748b')
+    
+    # Clean up the chart
+    ax.set_ylim(0, 1)
+    ax.set_yticks([])
+    ax.set_xticks([])
+    ax.spines['polar'].set_visible(False)
+    
+    # Save to buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def create_score_gauges(ct_score, ga_score, combined_score, benchmark):
+    """Create a combined gauge chart showing all three scores"""
+    fig, axes = plt.subplots(1, 4, figsize=(14, 3.5))
+    
+    scores = [ct_score, ga_score, combined_score, benchmark]
+    titles = ['Control Tower', 'Golden Architecture', 'Combined Score', 'Industry Benchmark']
+    main_colors = ['#0284c7', '#7c3aed', '#059669', '#f59e0b']
+    
+    for ax, score, title, color in zip(axes, scores, titles, main_colors):
+        # Create a semi-circular gauge
+        ax.set_xlim(-1.5, 1.5)
+        ax.set_ylim(-0.2, 1.3)
+        ax.set_aspect('equal')
+        ax.axis('off')
+        
+        # Background arc
+        theta = np.linspace(np.pi, 0, 100)
+        x_bg = np.cos(theta)
+        y_bg = np.sin(theta)
+        ax.fill(np.append(x_bg, [0]), np.append(y_bg, [0]), color='#e2e8f0', alpha=0.5)
+        
+        # Score arc
+        score_theta = np.linspace(np.pi, np.pi - (np.pi * score / 100), 100)
+        x_score = np.cos(score_theta)
+        y_score = np.sin(score_theta)
+        ax.fill(np.append(x_score, [0]), np.append(y_score, [0]), color=color, alpha=0.8)
+        
+        # Add gradient effect segments
+        for i, (start, end, c) in enumerate([
+            (0, 20, '#DC2626'), (20, 40, '#EA580C'), (40, 60, '#D97706'),
+            (60, 80, '#65A30D'), (80, 100, '#059669')
+        ]):
+            seg_start = np.pi - (np.pi * start / 100)
+            seg_end = np.pi - (np.pi * end / 100)
+            seg_theta = np.linspace(seg_start, seg_end, 20)
+            ax.plot(1.1 * np.cos(seg_theta), 1.1 * np.sin(seg_theta), color=c, linewidth=8, alpha=0.6)
+        
+        # Score text
+        ax.text(0, 0.4, f'{score:.0f}%', ha='center', va='center', 
+                fontsize=28, fontweight='bold', color='#1e293b')
+        ax.text(0, -0.1, title, ha='center', va='center', 
+                fontsize=11, fontweight='bold', color='#64748b')
+        
+        # Maturity label
+        if score >= 80:
+            maturity = "Optimized"
+            mat_color = '#059669'
+        elif score >= 60:
+            maturity = "Managed"
+            mat_color = '#65A30D'
+        elif score >= 40:
+            maturity = "Developing"
+            mat_color = '#D97706'
+        elif score >= 20:
+            maturity = "Initial"
+            mat_color = '#EA580C'
+        else:
+            maturity = "Not Assessed"
+            mat_color = '#64748b'
+        
+        ax.text(0, 0.15, maturity, ha='center', va='center', 
+                fontsize=9, color=mat_color, fontweight='bold')
+    
+    plt.tight_layout()
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def create_radar_chart(domain_scores, title, color='#0284c7'):
+    """Create a radar/spider chart for domain analysis"""
+    # Prepare data
+    categories = list(domain_scores.keys())
+    values = [domain_scores[cat]['score'] for cat in categories]
+    
+    # Truncate long category names
+    categories = [cat[:20] + '...' if len(cat) > 20 else cat for cat in categories]
+    
+    # Number of variables
+    num_vars = len(categories)
+    
+    # Compute angle for each category
+    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+    values += values[:1]  # Complete the loop
+    angles += angles[:1]
+    
+    fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
+    
+    # Draw the chart
+    ax.fill(angles, values, color=color, alpha=0.25)
+    ax.plot(angles, values, color=color, linewidth=2, marker='o', markersize=6)
+    
+    # Add reference circles
+    for level in [20, 40, 60, 80, 100]:
+        circle_color = '#059669' if level >= 80 else '#65A30D' if level >= 60 else '#D97706' if level >= 40 else '#EA580C' if level >= 20 else '#DC2626'
+        ax.plot(angles, [level] * len(angles), color=circle_color, linewidth=0.5, linestyle='--', alpha=0.5)
+    
+    # Set category labels
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(categories, fontsize=8)
+    
+    # Set radial limits
+    ax.set_ylim(0, 100)
+    ax.set_yticks([20, 40, 60, 80, 100])
+    ax.set_yticklabels(['20%', '40%', '60%', '80%', '100%'], fontsize=7, color='#64748b')
+    
+    # Title
+    ax.set_title(title, fontsize=14, fontweight='bold', color='#1e293b', pad=20)
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def create_horizontal_bar_chart(domain_scores, title, color='#0284c7'):
+    """Create a horizontal bar chart for domain scores"""
+    categories = list(domain_scores.keys())
+    values = [domain_scores[cat]['score'] for cat in categories]
+    
+    # Truncate long names
+    categories = [cat[:30] + '...' if len(cat) > 30 else cat for cat in categories]
+    
+    fig, ax = plt.subplots(figsize=(10, max(6, len(categories) * 0.5)))
+    
+    # Create color gradient based on score
+    colors_list = []
+    for v in values:
+        if v >= 80:
+            colors_list.append('#059669')
+        elif v >= 60:
+            colors_list.append('#65A30D')
+        elif v >= 40:
+            colors_list.append('#D97706')
+        elif v >= 20:
+            colors_list.append('#EA580C')
+        else:
+            colors_list.append('#DC2626')
+    
+    y_pos = np.arange(len(categories))
+    
+    # Background bars (100%)
+    ax.barh(y_pos, [100] * len(categories), color='#e2e8f0', height=0.6)
+    
+    # Score bars
+    bars = ax.barh(y_pos, values, color=colors_list, height=0.6, alpha=0.85)
+    
+    # Add value labels
+    for i, (bar, val) in enumerate(zip(bars, values)):
+        ax.text(val + 2, bar.get_y() + bar.get_height()/2, f'{val:.0f}%', 
+                va='center', ha='left', fontsize=10, fontweight='bold', color='#1e293b')
+    
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(categories, fontsize=9)
+    ax.set_xlim(0, 110)
+    ax.set_xlabel('Score (%)', fontsize=10, color='#64748b')
+    ax.set_title(title, fontsize=14, fontweight='bold', color='#1e293b', pad=15)
+    
+    # Add vertical lines for reference
+    for x in [20, 40, 60, 80]:
+        ax.axvline(x=x, color='#cbd5e1', linestyle='--', linewidth=0.5, alpha=0.7)
+    
+    # Clean up
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_color('#e2e8f0')
+    ax.spines['left'].set_color('#e2e8f0')
+    
+    plt.tight_layout()
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def create_gap_pie_chart(ct_gaps, ga_gaps):
+    """Create a pie chart showing gap distribution by risk level"""
+    # Count gaps by risk level
+    critical = len([g for g in ct_gaps + ga_gaps if g['risk'] == 'critical'])
+    high = len([g for g in ct_gaps + ga_gaps if g['risk'] == 'high'])
+    medium = len([g for g in ct_gaps + ga_gaps if g['risk'] == 'medium'])
+    
+    if critical + high + medium == 0:
+        # No gaps - create a "No Gaps" chart
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.text(0.5, 0.5, 'No Gaps\nIdentified', ha='center', va='center', 
+                fontsize=20, fontweight='bold', color='#059669', transform=ax.transAxes)
+        ax.axis('off')
+    else:
+        fig, ax = plt.subplots(figsize=(8, 6))
+        
+        sizes = [critical, high, medium]
+        labels = [f'Critical\n({critical})', f'High\n({high})', f'Medium\n({medium})']
+        colors_pie = ['#DC2626', '#EA580C', '#D97706']
+        explode = (0.05, 0.02, 0)
+        
+        # Filter out zero values
+        non_zero = [(s, l, c, e) for s, l, c, e in zip(sizes, labels, colors_pie, explode) if s > 0]
+        if non_zero:
+            sizes, labels, colors_pie, explode = zip(*non_zero)
+            
+            wedges, texts, autotexts = ax.pie(sizes, labels=labels, colors=colors_pie, 
+                                               explode=explode, autopct='%1.0f%%',
+                                               shadow=True, startangle=90,
+                                               textprops={'fontsize': 11, 'fontweight': 'bold'})
+            
+            for autotext in autotexts:
+                autotext.set_color('white')
+                autotext.set_fontweight('bold')
+        
+        ax.set_title('Gap Distribution by Risk Level', fontsize=14, fontweight='bold', 
+                    color='#1e293b', pad=20)
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def create_industry_comparison_chart(combined_score, benchmarks, current_industry):
+    """Create a bar chart comparing score against industry benchmarks"""
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    industries = [b['name'] for b in benchmarks.values()]
+    averages = [b['avg'] for b in benchmarks.values()]
+    top_performers = [b['top'] for b in benchmarks.values()]
+    
+    x = np.arange(len(industries))
+    width = 0.35
+    
+    # Create bars
+    bars1 = ax.bar(x - width/2, averages, width, label='Industry Average', 
+                   color='#94a3b8', alpha=0.7)
+    bars2 = ax.bar(x + width/2, top_performers, width, label='Top Performers', 
+                   color='#64748b', alpha=0.7)
+    
+    # Add your score line
+    ax.axhline(y=combined_score, color='#0284c7', linestyle='-', linewidth=3, 
+               label=f'Your Score ({combined_score:.0f}%)')
+    
+    # Highlight current industry
+    current_idx = list(benchmarks.keys()).index(current_industry)
+    bars1[current_idx].set_color('#0284c7')
+    bars1[current_idx].set_alpha(1.0)
+    bars2[current_idx].set_color('#0369a1')
+    bars2[current_idx].set_alpha(1.0)
+    
+    ax.set_ylabel('Score (%)', fontsize=11, color='#64748b')
+    ax.set_title('Industry Benchmark Comparison', fontsize=14, fontweight='bold', 
+                color='#1e293b', pad=15)
+    ax.set_xticks(x)
+    ax.set_xticklabels(industries, rotation=25, ha='right', fontsize=9)
+    ax.legend(loc='upper right', fontsize=9)
+    ax.set_ylim(0, 100)
+    
+    # Add value labels on bars
+    for bar in bars1:
+        height = bar.get_height()
+        ax.annotate(f'{height:.0f}%', xy=(bar.get_x() + bar.get_width() / 2, height),
+                   xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', 
+                   fontsize=8, color='#64748b')
+    
+    # Clean up
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_color('#e2e8f0')
+    ax.spines['left'].set_color('#e2e8f0')
+    ax.yaxis.grid(True, linestyle='--', alpha=0.3)
+    
+    plt.tight_layout()
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def create_maturity_roadmap_chart():
+    """Create a visual roadmap showing maturity phases"""
+    fig, ax = plt.subplots(figsize=(12, 5))
+    
+    phases = ['Phase 1\nFoundation', 'Phase 2\nStandardization', 
+              'Phase 3\nOptimization', 'Phase 4\nExcellence']
+    timelines = ['0-3 months', '3-6 months', '6-12 months', '12+ months']
+    colors_phases = ['#DC2626', '#D97706', '#65A30D', '#059669']
+    
+    # Draw timeline
+    ax.axhline(y=0.5, color='#e2e8f0', linewidth=8, zorder=1)
+    
+    for i, (phase, timeline, color) in enumerate(zip(phases, timelines, colors_phases)):
+        # Phase circles
+        circle = plt.Circle((i * 2 + 1, 0.5), 0.4, color=color, zorder=2)
+        ax.add_patch(circle)
+        
+        # Phase number
+        ax.text(i * 2 + 1, 0.5, str(i + 1), ha='center', va='center', 
+                fontsize=16, fontweight='bold', color='white', zorder=3)
+        
+        # Phase name
+        ax.text(i * 2 + 1, 1.1, phase, ha='center', va='center', 
+                fontsize=11, fontweight='bold', color='#1e293b')
+        
+        # Timeline
+        ax.text(i * 2 + 1, -0.1, timeline, ha='center', va='center', 
+                fontsize=9, color='#64748b')
+        
+        # Connect circles
+        if i < len(phases) - 1:
+            ax.annotate('', xy=(i * 2 + 2.6, 0.5), xytext=(i * 2 + 1.4, 0.5),
+                       arrowprops=dict(arrowstyle='->', color=color, lw=2))
+    
+    ax.set_xlim(-0.5, 8)
+    ax.set_ylim(-0.5, 1.5)
+    ax.axis('off')
+    ax.set_title('Maturity Improvement Roadmap', fontsize=14, fontweight='bold', 
+                color='#1e293b', pad=20)
+    
+    plt.tight_layout()
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def create_score_comparison_bars(ct_score, ga_score, combined, benchmark):
+    """Create a clean horizontal comparison bar chart"""
+    fig, ax = plt.subplots(figsize=(10, 4))
+    
+    categories = ['Control Tower', 'Golden Architecture', 'Combined Score', f'Industry Benchmark']
+    values = [ct_score, ga_score, combined, benchmark]
+    colors_bars = ['#0284c7', '#7c3aed', '#059669', '#f59e0b']
+    
+    y_pos = np.arange(len(categories))
+    
+    # Background bars
+    ax.barh(y_pos, [100] * len(categories), color='#f1f5f9', height=0.6)
+    
+    # Score bars
+    bars = ax.barh(y_pos, values, color=colors_bars, height=0.6, alpha=0.9)
+    
+    # Add value labels
+    for bar, val in zip(bars, values):
+        ax.text(val + 2, bar.get_y() + bar.get_height()/2, f'{val:.0f}%', 
+                va='center', ha='left', fontsize=12, fontweight='bold', color='#1e293b')
+    
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(categories, fontsize=11, fontweight='bold')
+    ax.set_xlim(0, 115)
+    ax.set_xlabel('Score (%)', fontsize=10, color='#64748b')
+    ax.set_title('Assessment Score Overview', fontsize=14, fontweight='bold', 
+                color='#1e293b', pad=15)
+    
+    # Reference lines
+    for x, label in [(40, 'Developing'), (60, 'Managed'), (80, 'Optimized')]:
+        ax.axvline(x=x, color='#cbd5e1', linestyle='--', linewidth=1, alpha=0.7)
+        ax.text(x, len(categories) - 0.3, label, fontsize=8, color='#94a3b8', 
+                ha='center', va='bottom')
+    
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_color('#e2e8f0')
+    ax.spines['left'].set_color('#e2e8f0')
+    
+    plt.tight_layout()
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+# =============================================================================
+# PLOTLY INTERACTIVE UI CHARTS
+# =============================================================================
+
+def create_ui_gauge_chart(score, title, color="#0284c7"):
+    """Create a beautiful gauge chart for the UI"""
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=score,
+        number={'suffix': '%', 'font': {'size': 40, 'color': '#1e293b', 'family': 'Inter, sans-serif'}},
+        title={'text': title, 'font': {'size': 16, 'color': '#64748b', 'family': 'Inter, sans-serif'}},
+        gauge={
+            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#e2e8f0",
+                    'tickvals': [0, 20, 40, 60, 80, 100],
+                    'ticktext': ['0', '20', '40', '60', '80', '100']},
+            'bar': {'color': color, 'thickness': 0.75},
+            'bgcolor': "white",
+            'borderwidth': 2,
+            'bordercolor': "#e2e8f0",
+            'steps': [
+                {'range': [0, 20], 'color': '#fee2e2'},
+                {'range': [20, 40], 'color': '#ffedd5'},
+                {'range': [40, 60], 'color': '#fef3c7'},
+                {'range': [60, 80], 'color': '#d1fae5'},
+                {'range': [80, 100], 'color': '#a7f3d0'}
+            ],
+            'threshold': {
+                'line': {'color': "#1e293b", 'width': 4},
+                'thickness': 0.75,
+                'value': score
+            }
+        }
+    ))
+    
+    fig.update_layout(
+        height=250,
+        margin=dict(l=20, r=20, t=50, b=20),
+        paper_bgcolor='rgba(0,0,0,0)',
+        font={'family': 'Inter, sans-serif'}
+    )
+    return fig
+
+def create_ui_score_gauges(ct_score, ga_score, combined, benchmark, bench_name):
+    """Create a row of 4 gauge charts"""
+    fig = make_subplots(
+        rows=1, cols=4,
+        specs=[[{'type': 'indicator'}, {'type': 'indicator'}, 
+                {'type': 'indicator'}, {'type': 'indicator'}]],
+        horizontal_spacing=0.05
+    )
+    
+    configs = [
+        (ct_score, "Control Tower", "#0284c7"),
+        (ga_score, "Golden Architecture", "#7c3aed"),
+        (combined, "Combined Score", "#059669"),
+        (benchmark, f"{bench_name}", "#f59e0b")
+    ]
+    
+    for i, (score, title, color) in enumerate(configs, 1):
+        fig.add_trace(go.Indicator(
+            mode="gauge+number",
+            value=score,
+            number={'suffix': '%', 'font': {'size': 28, 'color': '#1e293b'}},
+            title={'text': title, 'font': {'size': 12, 'color': '#64748b'}},
+            gauge={
+                'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#e2e8f0",
+                        'tickvals': [0, 50, 100], 'ticktext': ['0', '50', '100']},
+                'bar': {'color': color, 'thickness': 0.7},
+                'bgcolor': "white",
+                'borderwidth': 1,
+                'bordercolor': "#e2e8f0",
+                'steps': [
+                    {'range': [0, 40], 'color': '#fee2e2'},
+                    {'range': [40, 60], 'color': '#fef3c7'},
+                    {'range': [60, 80], 'color': '#d1fae5'},
+                    {'range': [80, 100], 'color': '#a7f3d0'}
+                ],
+            }
+        ), row=1, col=i)
+    
+    fig.update_layout(
+        height=280,
+        margin=dict(l=20, r=20, t=40, b=20),
+        paper_bgcolor='rgba(0,0,0,0)',
+    )
+    return fig
+
+def create_ui_radar_chart(domain_scores, title, color="#0284c7"):
+    """Create an interactive radar chart for domain analysis"""
+    categories = list(domain_scores.keys())
+    values = [domain_scores[cat]['score'] for cat in categories]
+    
+    # Truncate long names
+    display_categories = [cat[:25] + '...' if len(cat) > 25 else cat for cat in categories]
+    
+    # Close the radar
+    values_closed = values + [values[0]]
+    categories_closed = display_categories + [display_categories[0]]
+    
+    fig = go.Figure()
+    
+    # Add filled area
+    fig.add_trace(go.Scatterpolar(
+        r=values_closed,
+        theta=categories_closed,
+        fill='toself',
+        fillcolor=f'rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.25)',
+        line=dict(color=color, width=2),
+        name='Score',
+        hovertemplate='<b>%{theta}</b><br>Score: %{r:.0f}%<extra></extra>'
+    ))
+    
+    # Add markers
+    fig.add_trace(go.Scatterpolar(
+        r=values,
+        theta=display_categories,
+        mode='markers',
+        marker=dict(color=color, size=10, symbol='circle'),
+        showlegend=False,
+        hovertemplate='<b>%{theta}</b><br>Score: %{r:.0f}%<extra></extra>'
+    ))
+    
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100],
+                tickvals=[20, 40, 60, 80, 100],
+                ticktext=['20%', '40%', '60%', '80%', '100%'],
+                tickfont=dict(size=10, color='#94a3b8'),
+                gridcolor='#e2e8f0',
+                linecolor='#e2e8f0'
+            ),
+            angularaxis=dict(
+                tickfont=dict(size=11, color='#1e293b'),
+                gridcolor='#e2e8f0',
+                linecolor='#e2e8f0'
+            ),
+            bgcolor='rgba(0,0,0,0)'
+        ),
+        showlegend=False,
+        title=dict(text=title, font=dict(size=16, color='#1e293b'), x=0.5),
+        height=450,
+        margin=dict(l=80, r=80, t=80, b=60),
+        paper_bgcolor='rgba(0,0,0,0)',
+    )
+    return fig
+
+def create_ui_horizontal_bar_chart(domain_scores, title, color="#0284c7"):
+    """Create an interactive horizontal bar chart for domain scores"""
+    categories = list(domain_scores.keys())
+    values = [domain_scores[cat]['score'] for cat in categories]
+    answered = [f"{domain_scores[cat]['answered']}/{domain_scores[cat]['total']}" for cat in categories]
+    
+    # Color based on score
+    colors_list = []
+    for v in values:
+        if v >= 80:
+            colors_list.append('#059669')
+        elif v >= 60:
+            colors_list.append('#65a30d')
+        elif v >= 40:
+            colors_list.append('#d97706')
+        elif v >= 20:
+            colors_list.append('#ea580c')
+        else:
+            colors_list.append('#dc2626')
+    
+    fig = go.Figure()
+    
+    # Background bars (100%)
+    fig.add_trace(go.Bar(
+        y=categories,
+        x=[100] * len(categories),
+        orientation='h',
+        marker_color='#f1f5f9',
+        showlegend=False,
+        hoverinfo='skip'
+    ))
+    
+    # Score bars
+    fig.add_trace(go.Bar(
+        y=categories,
+        x=values,
+        orientation='h',
+        marker_color=colors_list,
+        text=[f'{v:.0f}%' for v in values],
+        textposition='outside',
+        textfont=dict(size=12, color='#1e293b', family='Inter, sans-serif'),
+        hovertemplate='<b>%{y}</b><br>Score: %{x:.0f}%<br>Answered: %{customdata}<extra></extra>',
+        customdata=answered,
+        showlegend=False
+    ))
+    
+    # Add maturity reference lines
+    for x, label, clr in [(40, 'Developing', '#d97706'), (60, 'Managed', '#65a30d'), (80, 'Optimized', '#059669')]:
+        fig.add_vline(x=x, line_dash="dash", line_color='#cbd5e1', line_width=1)
+        fig.add_annotation(x=x, y=len(categories)-0.5, text=label, showarrow=False, 
+                          font=dict(size=9, color='#94a3b8'), yshift=15)
+    
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=16, color='#1e293b'), x=0),
+        xaxis=dict(
+            title='Score (%)',
+            range=[0, 110],
+            gridcolor='#f1f5f9',
+            tickfont=dict(color='#64748b')
+        ),
+        yaxis=dict(
+            tickfont=dict(size=11, color='#1e293b'),
+            categoryorder='total ascending'
+        ),
+        height=max(350, len(categories) * 45),
+        margin=dict(l=20, r=40, t=60, b=40),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        barmode='overlay'
+    )
+    return fig
+
+def create_ui_gap_donut_chart(ct_gaps, ga_gaps):
+    """Create an interactive donut chart for gap distribution"""
+    critical = len([g for g in ct_gaps + ga_gaps if g['risk'] == 'critical'])
+    high = len([g for g in ct_gaps + ga_gaps if g['risk'] == 'high'])
+    medium = len([g for g in ct_gaps + ga_gaps if g['risk'] == 'medium'])
+    
+    total = critical + high + medium
+    
+    if total == 0:
+        # No gaps - create a success chart
+        fig = go.Figure(go.Indicator(
+            mode="number",
+            value=0,
+            number={'suffix': ' Gaps', 'font': {'size': 48, 'color': '#059669'}},
+            title={'text': '✓ No Gaps Identified', 'font': {'size': 18, 'color': '#059669'}}
+        ))
+        fig.update_layout(height=300, paper_bgcolor='rgba(0,0,0,0)')
+        return fig
+    
+    labels = ['Critical', 'High', 'Medium']
+    values = [critical, high, medium]
+    colors_pie = ['#dc2626', '#ea580c', '#d97706']
+    
+    # Filter out zeros
+    non_zero = [(l, v, c) for l, v, c in zip(labels, values, colors_pie) if v > 0]
+    if non_zero:
+        labels, values, colors_pie = zip(*non_zero)
+    
+    fig = go.Figure(data=[go.Pie(
+        labels=labels,
+        values=values,
+        hole=0.5,
+        marker_colors=colors_pie,
+        textinfo='label+value',
+        textfont=dict(size=14, color='white'),
+        hovertemplate='<b>%{label}</b><br>Count: %{value}<br>Percentage: %{percent}<extra></extra>',
+        pull=[0.05 if l == 'Critical' else 0 for l in labels]
+    )])
+    
+    fig.add_annotation(
+        text=f'<b>{total}</b><br>Total<br>Gaps',
+        x=0.5, y=0.5,
+        font=dict(size=16, color='#1e293b'),
+        showarrow=False
+    )
+    
+    fig.update_layout(
+        title=dict(text='Gap Distribution by Risk Level', font=dict(size=16, color='#1e293b'), x=0.5),
+        height=350,
+        margin=dict(l=20, r=20, t=60, b=20),
+        paper_bgcolor='rgba(0,0,0,0)',
+        showlegend=True,
+        legend=dict(orientation='h', yanchor='bottom', y=-0.1, xanchor='center', x=0.5)
+    )
+    return fig
+
+def create_ui_industry_comparison_chart(combined, benchmarks, current_industry):
+    """Create an interactive bar chart for industry comparison"""
+    industries = [b['name'] for b in benchmarks.values()]
+    averages = [b['avg'] for b in benchmarks.values()]
+    top_performers = [b['top'] for b in benchmarks.values()]
+    industry_keys = list(benchmarks.keys())
+    
+    # Highlight current industry
+    avg_colors = ['#0284c7' if k == current_industry else '#94a3b8' for k in industry_keys]
+    top_colors = ['#0369a1' if k == current_industry else '#64748b' for k in industry_keys]
+    
+    fig = go.Figure()
+    
+    # Average bars
+    fig.add_trace(go.Bar(
+        name='Industry Average',
+        x=industries,
+        y=averages,
+        marker_color=avg_colors,
+        text=[f'{a}%' for a in averages],
+        textposition='outside',
+        textfont=dict(size=10),
+        hovertemplate='<b>%{x}</b><br>Average: %{y}%<extra></extra>'
+    ))
+    
+    # Top performer bars
+    fig.add_trace(go.Bar(
+        name='Top Performers',
+        x=industries,
+        y=top_performers,
+        marker_color=top_colors,
+        text=[f'{t}%' for t in top_performers],
+        textposition='outside',
+        textfont=dict(size=10),
+        hovertemplate='<b>%{x}</b><br>Top Performers: %{y}%<extra></extra>'
+    ))
+    
+    # Your score line
+    fig.add_hline(y=combined, line_dash="solid", line_color="#059669", line_width=3,
+                  annotation_text=f"Your Score: {combined:.0f}%", 
+                  annotation_position="right",
+                  annotation_font=dict(color="#059669", size=12, family='Inter, sans-serif'))
+    
+    fig.update_layout(
+        title=dict(text='Industry Benchmark Comparison', font=dict(size=16, color='#1e293b'), x=0),
+        xaxis=dict(
+            tickfont=dict(size=10, color='#64748b'),
+            tickangle=-25
+        ),
+        yaxis=dict(
+            title='Score (%)',
+            range=[0, 105],
+            gridcolor='#f1f5f9',
+            tickfont=dict(color='#64748b')
+        ),
+        height=400,
+        margin=dict(l=40, r=40, t=60, b=100),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        barmode='group',
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
+    )
+    return fig
+
+def create_ui_maturity_progress_chart(ct_score, ga_score, combined, bench_avg):
+    """Create a progress/bullet chart showing maturity progress"""
+    categories = ['Control Tower', 'Golden Architecture', 'Combined', 'Industry Benchmark']
+    scores = [ct_score, ga_score, combined, bench_avg]
+    colors = ['#0284c7', '#7c3aed', '#059669', '#f59e0b']
+    
+    fig = go.Figure()
+    
+    for i, (cat, score, color) in enumerate(zip(categories, scores, colors)):
+        # Determine maturity level
+        if score >= 80:
+            maturity = "Optimized"
+        elif score >= 60:
+            maturity = "Managed"
+        elif score >= 40:
+            maturity = "Developing"
+        elif score >= 20:
+            maturity = "Initial"
+        else:
+            maturity = "Not Assessed"
+        
+        fig.add_trace(go.Bar(
+            y=[cat],
+            x=[score],
+            orientation='h',
+            marker=dict(
+                color=color,
+                line=dict(color=color, width=1)
+            ),
+            text=f'{score:.0f}% - {maturity}',
+            textposition='outside',
+            textfont=dict(size=12, color='#1e293b'),
+            hovertemplate=f'<b>{cat}</b><br>Score: {score:.0f}%<br>Maturity: {maturity}<extra></extra>',
+            showlegend=False
+        ))
+    
+    # Add maturity level backgrounds
+    shapes = [
+        dict(type='rect', x0=0, x1=20, y0=-0.5, y1=3.5, fillcolor='#fee2e2', opacity=0.3, line_width=0, layer='below'),
+        dict(type='rect', x0=20, x1=40, y0=-0.5, y1=3.5, fillcolor='#ffedd5', opacity=0.3, line_width=0, layer='below'),
+        dict(type='rect', x0=40, x1=60, y0=-0.5, y1=3.5, fillcolor='#fef3c7', opacity=0.3, line_width=0, layer='below'),
+        dict(type='rect', x0=60, x1=80, y0=-0.5, y1=3.5, fillcolor='#d1fae5', opacity=0.3, line_width=0, layer='below'),
+        dict(type='rect', x0=80, x1=100, y0=-0.5, y1=3.5, fillcolor='#a7f3d0', opacity=0.3, line_width=0, layer='below'),
+    ]
+    
+    fig.update_layout(
+        shapes=shapes,
+        xaxis=dict(
+            range=[0, 110],
+            title='Score (%)',
+            gridcolor='#e2e8f0',
+            tickfont=dict(color='#64748b'),
+            tickvals=[0, 20, 40, 60, 80, 100]
+        ),
+        yaxis=dict(
+            tickfont=dict(size=12, color='#1e293b')
+        ),
+        height=250,
+        margin=dict(l=20, r=100, t=30, b=40),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)'
+    )
+    
+    # Add maturity labels at top
+    for x, label in [(10, 'Initial'), (30, 'Developing'), (50, 'Defined'), (70, 'Managed'), (90, 'Optimized')]:
+        fig.add_annotation(x=x, y=4, text=label, showarrow=False,
+                          font=dict(size=9, color='#94a3b8'), yshift=5)
+    
+    return fig
+
+def create_ui_gap_heatmap(ct_gaps, ga_gaps, ct_questions, ga_questions):
+    """Create a heatmap showing gaps by domain and risk level"""
+    all_domains = list(ct_questions.keys()) + list(ga_questions.keys())
+    risk_levels = ['Critical', 'High', 'Medium']
+    
+    # Build matrix
+    matrix = []
+    for domain in all_domains:
+        row = []
+        for risk in ['critical', 'high', 'medium']:
+            count = len([g for g in ct_gaps + ga_gaps if g['domain'] == domain and g['risk'] == risk])
+            row.append(count)
+        matrix.append(row)
+    
+    # Truncate domain names
+    display_domains = [d[:30] + '...' if len(d) > 30 else d for d in all_domains]
+    
+    fig = go.Figure(data=go.Heatmap(
+        z=matrix,
+        x=risk_levels,
+        y=display_domains,
+        colorscale=[
+            [0, '#f0fdf4'],
+            [0.25, '#fef3c7'],
+            [0.5, '#fed7aa'],
+            [0.75, '#fecaca'],
+            [1, '#dc2626']
+        ],
+        showscale=True,
+        colorbar=dict(title='Gap Count', tickfont=dict(size=10)),
+        hovertemplate='<b>%{y}</b><br>Risk: %{x}<br>Gaps: %{z}<extra></extra>',
+        text=matrix,
+        texttemplate='%{text}',
+        textfont=dict(size=11, color='#1e293b')
+    ))
+    
+    fig.update_layout(
+        title=dict(text='Gap Heatmap by Domain & Risk Level', font=dict(size=16, color='#1e293b'), x=0),
+        xaxis=dict(tickfont=dict(size=12, color='#1e293b')),
+        yaxis=dict(tickfont=dict(size=10, color='#1e293b'), autorange='reversed'),
+        height=max(400, len(all_domains) * 25),
+        margin=dict(l=20, r=20, t=60, b=40),
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    return fig
+
+# =============================================================================
+# COMPREHENSIVE PDF REPORT GENERATOR
+# =============================================================================
+def generate_pdf_report(org_name, assessor_name, industry, ct_responses, ga_responses, 
+                        ct_questions, ga_questions, benchmarks, ai_analysis):
+    """Generate a comprehensive 30+ page PDF assessment report"""
+    
+    buffer = io.BytesIO()
+    
+    # Document setup
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=0.75*inch,
+        leftMargin=0.75*inch,
+        topMargin=0.75*inch,
+        bottomMargin=0.75*inch
+    )
+    
+    # Custom styles
+    styles = getSampleStyleSheet()
+    
+    # Define custom colors
+    aws_orange = colors.HexColor('#FF9900')
+    aws_dark = colors.HexColor('#232F3E')
+    primary_blue = colors.HexColor('#0284C7')
+    success_green = colors.HexColor('#059669')
+    warning_amber = colors.HexColor('#D97706')
+    danger_red = colors.HexColor('#DC2626')
+    text_gray = colors.HexColor('#475569')
+    light_gray = colors.HexColor('#F1F5F9')
+    border_gray = colors.HexColor('#E2E8F0')
+    
+    # Custom paragraph styles
+    styles.add(ParagraphStyle(
+        name='CoverTitle',
+        parent=styles['Title'],
+        fontSize=32,
+        textColor=aws_dark,
+        alignment=TA_CENTER,
+        spaceAfter=20,
+        fontName='Helvetica-Bold'
+    ))
+    
+    styles.add(ParagraphStyle(
+        name='CoverSubtitle',
+        parent=styles['Normal'],
+        fontSize=16,
+        textColor=text_gray,
+        alignment=TA_CENTER,
+        spaceAfter=40
+    ))
+    
+    styles.add(ParagraphStyle(
+        name='SectionTitle',
+        parent=styles['Heading1'],
+        fontSize=20,
+        textColor=aws_dark,
+        spaceBefore=30,
+        spaceAfter=15,
+        fontName='Helvetica-Bold',
+        borderColor=primary_blue,
+        borderWidth=2,
+        borderPadding=5
+    ))
+    
+    styles.add(ParagraphStyle(
+        name='SubSectionTitle',
+        parent=styles['Heading2'],
+        fontSize=14,
+        textColor=primary_blue,
+        spaceBefore=20,
+        spaceAfter=10,
+        fontName='Helvetica-Bold'
+    ))
+    
+    styles.add(ParagraphStyle(
+        name='DomainTitle',
+        parent=styles['Heading3'],
+        fontSize=12,
+        textColor=aws_dark,
+        spaceBefore=15,
+        spaceAfter=8,
+        fontName='Helvetica-Bold'
+    ))
+    
+    styles.add(ParagraphStyle(
+        name='BodyText',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=text_gray,
+        alignment=TA_JUSTIFY,
+        spaceAfter=8,
+        leading=14
+    ))
+    
+    styles.add(ParagraphStyle(
+        name='SmallText',
+        parent=styles['Normal'],
+        fontSize=8,
+        textColor=text_gray,
+        spaceAfter=4
+    ))
+    
+    styles.add(ParagraphStyle(
+        name='TOCEntry',
+        parent=styles['Normal'],
+        fontSize=11,
+        textColor=aws_dark,
+        leftIndent=20,
+        spaceAfter=8
+    ))
+    
+    styles.add(ParagraphStyle(
+        name='TOCSection',
+        parent=styles['Normal'],
+        fontSize=12,
+        textColor=aws_dark,
+        fontName='Helvetica-Bold',
+        spaceBefore=10,
+        spaceAfter=5
+    ))
+    
+    styles.add(ParagraphStyle(
+        name='QuestionText',
+        parent=styles['Normal'],
+        fontSize=9,
+        textColor=text_gray,
+        leftIndent=15,
+        spaceAfter=4
+    ))
+    
+    styles.add(ParagraphStyle(
+        name='Footer',
+        parent=styles['Normal'],
+        fontSize=8,
+        textColor=text_gray,
+        alignment=TA_CENTER
+    ))
+    
+    # Calculate scores
+    ct_scores = calc_scores(ct_responses, ct_questions)
+    ga_scores = calc_scores(ga_responses, ga_questions)
+    combined = (ct_scores["overall"] + ga_scores["overall"]) / 2 if (ct_scores["overall"] > 0 or ga_scores["overall"] > 0) else 0
+    
+    # Find gaps
+    ct_gaps = find_gaps(ct_responses, ct_questions)
+    ga_gaps = find_gaps(ga_responses, ga_questions)
+    
+    bench = benchmarks[industry]
+    
+    story = []
+    
+    # =========================================================================
+    # COVER PAGE
+    # =========================================================================
+    story.append(Spacer(1, 1.5*inch))
+    
+    # AWS Logo placeholder (orange bar)
+    cover_header = Drawing(500, 60)
+    cover_header.add(Rect(0, 20, 500, 40, fillColor=aws_orange, strokeColor=None))
+    cover_header.add(String(20, 35, "AWS", fontSize=24, fillColor=colors.white, fontName='Helvetica-Bold'))
+    cover_header.add(String(70, 35, "Enterprise Assessment Platform", fontSize=16, fillColor=colors.white))
+    story.append(cover_header)
+    
+    story.append(Spacer(1, 0.5*inch))
+    story.append(Paragraph("AWS Enterprise Assessment", styles['CoverTitle']))
+    story.append(Paragraph("Control Tower & Golden Architecture Readiness Report", styles['CoverSubtitle']))
+    
+    story.append(Spacer(1, 0.5*inch))
+    
+    # Cover info table
+    cover_data = [
+        ['Organization:', org_name or 'Not Specified'],
+        ['Assessment Date:', datetime.now().strftime('%B %d, %Y')],
+        ['Assessor:', assessor_name or 'Not Specified'],
+        ['Industry Vertical:', bench['name']],
+        ['Report Version:', 'v3.0 - Comprehensive Analysis'],
+    ]
+    
+    cover_table = Table(cover_data, colWidths=[2*inch, 4*inch])
+    cover_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 11),
+        ('TEXTCOLOR', (0, 0), (0, -1), aws_dark),
+        ('TEXTCOLOR', (1, 0), (1, -1), text_gray),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+        ('TOPPADDING', (0, 0), (-1, -1), 12),
+        ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+        ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+    ]))
+    story.append(cover_table)
+    
+    story.append(Spacer(1, 0.75*inch))
+    
+    # Executive Score Summary Box
+    score_color = success_green if combined >= 60 else (warning_amber if combined >= 40 else danger_red)
+    maturity_level, _, maturity_desc = get_maturity(combined)
+    
+    exec_summary_data = [
+        ['COMBINED ASSESSMENT SCORE'],
+        [f'{combined:.0f}%'],
+        [f'Maturity Level: {maturity_level}'],
+        [maturity_desc]
+    ]
+    
+    exec_table = Table(exec_summary_data, colWidths=[4*inch])
+    exec_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), aws_dark),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTSIZE', (0, 1), (0, 1), 48),
+        ('FONTNAME', (0, 1), (0, 1), 'Helvetica-Bold'),
+        ('TEXTCOLOR', (0, 1), (0, 1), score_color),
+        ('FONTSIZE', (0, 2), (0, 2), 14),
+        ('FONTNAME', (0, 2), (0, 2), 'Helvetica-Bold'),
+        ('TEXTCOLOR', (0, 2), (0, 2), aws_dark),
+        ('FONTSIZE', (0, 3), (0, 3), 10),
+        ('TEXTCOLOR', (0, 3), (0, 3), text_gray),
+        ('TOPPADDING', (0, 0), (-1, -1), 15),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
+        ('BOX', (0, 0), (-1, -1), 2, aws_dark),
+    ]))
+    story.append(exec_table)
+    
+    story.append(Spacer(1, 0.5*inch))
+    
+    # Add Score Gauges Visualization
+    try:
+        gauges_img = create_score_gauges(ct_scores["overall"], ga_scores["overall"], combined, bench["avg"])
+        story.append(Image(gauges_img, width=7*inch, height=1.8*inch))
+    except Exception as e:
+        pass  # Skip if chart generation fails
+    
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Confidentiality notice
+    story.append(Paragraph(
+        "<b>CONFIDENTIAL</b> - This report contains proprietary assessment data and recommendations. "
+        "Distribution should be limited to authorized personnel only.",
+        styles['SmallText']
+    ))
+    
+    story.append(PageBreak())
+    
+    # =========================================================================
+    # TABLE OF CONTENTS
+    # =========================================================================
+    story.append(Paragraph("Table of Contents", styles['SectionTitle']))
+    story.append(Spacer(1, 0.25*inch))
+    
+    toc_items = [
+        ("1.", "Executive Summary", "3"),
+        ("2.", "Assessment Methodology", "5"),
+        ("3.", "Overall Score Analysis", "7"),
+        ("4.", "Control Tower Assessment", "9"),
+        ("    4.1", "Domain Analysis", "10"),
+        ("    4.2", "Detailed Findings", "12"),
+        ("5.", "Golden Architecture Assessment", "15"),
+        ("    5.1", "Domain Analysis", "16"),
+        ("    5.2", "Detailed Findings", "18"),
+        ("6.", "Gap Analysis", "21"),
+        ("    6.1", "Critical Gaps", "22"),
+        ("    6.2", "High Priority Gaps", "23"),
+        ("    6.3", "Medium Priority Gaps", "24"),
+        ("7.", "Industry Benchmark Comparison", "25"),
+        ("8.", "Maturity Roadmap", "26"),
+        ("9.", "Implementation Recommendations", "28"),
+        ("10.", "Risk Assessment", "30"),
+        ("11.", "AI-Powered Analysis", "31"),
+        ("A.", "Appendix: Question Details", "33"),
+        ("B.", "Appendix: Scoring Methodology", "35"),
+    ]
+    
+    for num, title, page in toc_items:
+        is_sub = num.startswith("    ")
+        style = styles['TOCEntry'] if is_sub else styles['TOCSection']
+        dots = "." * (60 - len(num) - len(title))
+        story.append(Paragraph(f"{num} {title} {dots} {page}", style))
+    
+    story.append(PageBreak())
+    
+    # =========================================================================
+    # EXECUTIVE SUMMARY
+    # =========================================================================
+    story.append(Paragraph("1. Executive Summary", styles['SectionTitle']))
+    
+    story.append(Paragraph(
+        f"This comprehensive assessment evaluates {org_name or 'the organization'}'s readiness for "
+        f"AWS Control Tower migration and Golden Architecture (serverless) adoption. The assessment "
+        f"covers 130+ evaluation criteria across 22 domains, providing a detailed view of current "
+        f"capabilities, gaps, and recommended improvements.",
+        styles['BodyText']
+    ))
+    
+    story.append(Spacer(1, 0.2*inch))
+    story.append(Paragraph("Key Findings", styles['SubSectionTitle']))
+    
+    # Key metrics table
+    key_metrics = [
+        ['Metric', 'Value', 'Status'],
+        ['Control Tower Score', f'{ct_scores["overall"]:.1f}%', get_maturity(ct_scores["overall"])[0]],
+        ['Golden Architecture Score', f'{ga_scores["overall"]:.1f}%', get_maturity(ga_scores["overall"])[0]],
+        ['Combined Enterprise Score', f'{combined:.1f}%', get_maturity(combined)[0]],
+        ['vs Industry Benchmark', f'{combined - bench["avg"]:+.1f}%', 'Above' if combined >= bench["avg"] else 'Below'],
+        ['Assessment Completion', f'{((ct_scores["total_answered"] + ga_scores["total_answered"]) / (ct_scores["total_questions"] + ga_scores["total_questions"]) * 100):.0f}%', ''],
+    ]
+    
+    metrics_table = Table(key_metrics, colWidths=[2.5*inch, 1.5*inch, 2*inch])
+    metrics_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), aws_dark),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(metrics_table)
+    
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Gap summary
+    story.append(Paragraph("Gap Summary", styles['SubSectionTitle']))
+    
+    critical_ct = len([g for g in ct_gaps if g['risk'] == 'critical'])
+    high_ct = len([g for g in ct_gaps if g['risk'] == 'high'])
+    medium_ct = len([g for g in ct_gaps if g['risk'] == 'medium'])
+    critical_ga = len([g for g in ga_gaps if g['risk'] == 'critical'])
+    high_ga = len([g for g in ga_gaps if g['risk'] == 'high'])
+    medium_ga = len([g for g in ga_gaps if g['risk'] == 'medium'])
+    
+    gap_summary = [
+        ['Risk Level', 'Control Tower', 'Golden Architecture', 'Total'],
+        ['Critical', str(critical_ct), str(critical_ga), str(critical_ct + critical_ga)],
+        ['High', str(high_ct), str(high_ga), str(high_ct + high_ga)],
+        ['Medium', str(medium_ct), str(medium_ga), str(medium_ct + medium_ga)],
+        ['Total Gaps', str(critical_ct + high_ct + medium_ct), str(critical_ga + high_ga + medium_ga), 
+         str(critical_ct + high_ct + medium_ct + critical_ga + high_ga + medium_ga)],
+    ]
+    
+    gap_table = Table(gap_summary, colWidths=[1.5*inch, 1.5*inch, 1.75*inch, 1.25*inch])
+    gap_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), aws_dark),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, 1), (0, 1), colors.HexColor('#FEE2E2')),
+        ('BACKGROUND', (0, 2), (0, 2), colors.HexColor('#FFEDD5')),
+        ('BACKGROUND', (0, 3), (0, 3), colors.HexColor('#FEF3C7')),
+        ('BACKGROUND', (0, 4), (-1, 4), light_gray),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(gap_table)
+    
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Executive Recommendations
+    story.append(Paragraph("Executive Recommendations", styles['SubSectionTitle']))
+    
+    recommendations = []
+    if critical_ct + critical_ga > 0:
+        recommendations.append("• <b>Immediate Action Required:</b> Address critical gaps in security and governance before proceeding with Control Tower migration.")
+    if ct_scores["overall"] < 40:
+        recommendations.append("• <b>Foundation Building:</b> Establish basic multi-account governance and OU structure before Control Tower adoption.")
+    if ga_scores["overall"] < 40:
+        recommendations.append("• <b>Serverless Readiness:</b> Develop serverless competencies through training and pilot projects.")
+    if combined < bench["avg"]:
+        recommendations.append(f"• <b>Industry Gap:</b> Score is {bench['avg'] - combined:.0f}% below the {bench['name']} average. Prioritize assessment completion and gap remediation.")
+    if combined >= bench["avg"]:
+        recommendations.append(f"• <b>Competitive Position:</b> Organization performs at or above {bench['name']} average. Focus on optimization and advanced capabilities.")
+    
+    if not recommendations:
+        recommendations.append("• Complete the assessment to receive tailored recommendations.")
+    
+    for rec in recommendations:
+        story.append(Paragraph(rec, styles['BodyText']))
+    
+    story.append(PageBreak())
+    
+    # =========================================================================
+    # ASSESSMENT METHODOLOGY
+    # =========================================================================
+    story.append(Paragraph("2. Assessment Methodology", styles['SectionTitle']))
+    
+    story.append(Paragraph(
+        "This assessment follows AWS Well-Architected Framework principles and incorporates "
+        "industry best practices for enterprise cloud adoption. The methodology evaluates organizational "
+        "readiness across multiple dimensions:",
+        styles['BodyText']
+    ))
+    
+    story.append(Spacer(1, 0.15*inch))
+    
+    # Well-Architected Pillars
+    story.append(Paragraph("AWS Well-Architected Framework Pillars", styles['SubSectionTitle']))
+    
+    pillars_data = [
+        ['Pillar', 'Description', 'Focus Areas'],
+        ['Operational Excellence', 'Run and monitor systems to deliver business value', 'Automation, monitoring, incident response'],
+        ['Security', 'Protect information, systems, and assets', 'IAM, encryption, compliance, detective controls'],
+        ['Reliability', 'Recover from failures and meet demand', 'Fault tolerance, disaster recovery, scaling'],
+        ['Performance Efficiency', 'Use resources efficiently', 'Right-sizing, caching, serverless optimization'],
+        ['Cost Optimization', 'Avoid unnecessary costs', 'Reserved capacity, rightsizing, waste elimination'],
+        ['Sustainability', 'Minimize environmental impact', 'Efficient architectures, managed services'],
+    ]
+    
+    pillars_table = Table(pillars_data, colWidths=[1.75*inch, 2.25*inch, 2*inch])
+    pillars_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), primary_blue),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(pillars_table)
+    
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Scoring methodology
+    story.append(Paragraph("Scoring Methodology", styles['SubSectionTitle']))
+    
+    story.append(Paragraph(
+        "Each question is scored on a 5-point maturity scale, with domain scores weighted by "
+        "their relative importance to overall enterprise readiness:",
+        styles['BodyText']
+    ))
+    
+    scoring_data = [
+        ['Score', 'Level', 'Description'],
+        ['1 (0-20%)', 'Initial', 'Ad-hoc processes, limited documentation, reactive approach'],
+        ['2 (21-40%)', 'Developing', 'Basic processes emerging, inconsistent implementation'],
+        ['3 (41-60%)', 'Defined', 'Documented processes, partial implementation across org'],
+        ['4 (61-80%)', 'Managed', 'Consistent implementation, metrics-driven improvement'],
+        ['5 (81-100%)', 'Optimized', 'Industry-leading practices, continuous optimization'],
+    ]
+    
+    scoring_table = Table(scoring_data, colWidths=[1.25*inch, 1.25*inch, 3.5*inch])
+    scoring_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), aws_dark),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(scoring_table)
+    
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Assessment coverage
+    story.append(Paragraph("Assessment Coverage", styles['SubSectionTitle']))
+    
+    coverage_data = [
+        ['Assessment', 'Domains', 'Questions', 'Focus'],
+        ['Control Tower', str(len(ct_questions)), str(ct_scores['total_questions']), 'Multi-account governance, security, compliance'],
+        ['Golden Architecture', str(len(ga_questions)), str(ga_scores['total_questions']), 'Serverless maturity, event-driven patterns'],
+        ['Total', str(len(ct_questions) + len(ga_questions)), str(ct_scores['total_questions'] + ga_scores['total_questions']), 'Comprehensive enterprise readiness'],
+    ]
+    
+    coverage_table = Table(coverage_data, colWidths=[1.5*inch, 1*inch, 1*inch, 2.5*inch])
+    coverage_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), primary_blue),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (-1, -2), light_gray),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#DBEAFE')),
+        ('ALIGN', (1, 0), (2, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(coverage_table)
+    
+    story.append(PageBreak())
+    
+    # =========================================================================
+    # OVERALL SCORE ANALYSIS
+    # =========================================================================
+    story.append(Paragraph("3. Overall Score Analysis", styles['SectionTitle']))
+    
+    # Score comparison visualization using matplotlib
+    story.append(Paragraph("Assessment Score Comparison", styles['SubSectionTitle']))
+    
+    # Add beautiful comparison bar chart
+    try:
+        comparison_img = create_score_comparison_bars(ct_scores["overall"], ga_scores["overall"], combined, bench["avg"])
+        story.append(Image(comparison_img, width=6.5*inch, height=2.6*inch))
+    except Exception as e:
+        # Fallback to simple text if chart fails
+        story.append(Paragraph(f"Control Tower: {ct_scores['overall']:.1f}% | Golden Architecture: {ga_scores['overall']:.1f}% | Combined: {combined:.1f}%", styles['BodyText']))
+    
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Maturity distribution
+    story.append(Paragraph("Maturity Level Assessment", styles['SubSectionTitle']))
+    
+    maturity_data = [
+        ['Assessment', 'Score', 'Maturity Level', 'Description'],
+        ['Control Tower', f'{ct_scores["overall"]:.1f}%', get_maturity(ct_scores["overall"])[0], get_maturity(ct_scores["overall"])[2]],
+        ['Golden Architecture', f'{ga_scores["overall"]:.1f}%', get_maturity(ga_scores["overall"])[0], get_maturity(ga_scores["overall"])[2]],
+        ['Combined', f'{combined:.1f}%', get_maturity(combined)[0], get_maturity(combined)[2]],
+    ]
+    
+    maturity_table = Table(maturity_data, colWidths=[1.5*inch, 1*inch, 1.25*inch, 2.25*inch])
+    maturity_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), aws_dark),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+        ('ALIGN', (1, 0), (2, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(maturity_table)
+    
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Industry comparison
+    story.append(Paragraph("Industry Benchmark Comparison", styles['SubSectionTitle']))
+    
+    story.append(Paragraph(
+        f"Your organization's combined score of <b>{combined:.1f}%</b> compares to the "
+        f"<b>{bench['name']}</b> industry average of <b>{bench['avg']}%</b> and top performers "
+        f"at <b>{bench['top']}%</b>.",
+        styles['BodyText']
+    ))
+    
+    variance = combined - bench["avg"]
+    if variance >= 0:
+        story.append(Paragraph(
+            f"<font color='#059669'><b>Positive Variance: +{variance:.1f}%</b></font> - "
+            f"Your organization performs above the industry average.",
+            styles['BodyText']
+        ))
+    else:
+        story.append(Paragraph(
+            f"<font color='#DC2626'><b>Negative Variance: {variance:.1f}%</b></font> - "
+            f"Gap to industry average should be addressed through prioritized remediation.",
+            styles['BodyText']
+        ))
+    
+    story.append(PageBreak())
+    
+    # =========================================================================
+    # CONTROL TOWER ASSESSMENT DETAILS
+    # =========================================================================
+    story.append(Paragraph("4. Control Tower Assessment", styles['SectionTitle']))
+    
+    story.append(Paragraph(
+        "AWS Control Tower provides the easiest way to set up and govern a secure, multi-account "
+        "AWS environment. This section evaluates organizational readiness across 12 key domains.",
+        styles['BodyText']
+    ))
+    
+    # Overall CT metrics
+    ct_metrics = [
+        ['Metric', 'Value'],
+        ['Overall Score', f'{ct_scores["overall"]:.1f}%'],
+        ['Maturity Level', get_maturity(ct_scores["overall"])[0]],
+        ['Questions Answered', f'{ct_scores["total_answered"]} / {ct_scores["total_questions"]}'],
+        ['Completion Rate', f'{(ct_scores["total_answered"]/ct_scores["total_questions"]*100):.0f}%'],
+        ['Critical Gaps', str(critical_ct)],
+        ['High Priority Gaps', str(high_ct)],
+    ]
+    
+    ct_metrics_table = Table(ct_metrics, colWidths=[2.5*inch, 2*inch])
+    ct_metrics_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), primary_blue),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+        ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(ct_metrics_table)
+    
+    story.append(Spacer(1, 0.2*inch))
+    story.append(Paragraph("4.1 Domain Analysis", styles['SubSectionTitle']))
+    
+    # Add Domain Radar Chart
+    if ct_scores["total_answered"] > 0:
+        try:
+            ct_radar_img = create_radar_chart(ct_scores["domains"], "Control Tower Domain Maturity", color='#0284c7')
+            story.append(Image(ct_radar_img, width=5*inch, height=5*inch))
+        except Exception as e:
+            pass
+    
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Add Horizontal Bar Chart for domains
+    if ct_scores["total_answered"] > 0:
+        try:
+            ct_bar_img = create_horizontal_bar_chart(ct_scores["domains"], "Control Tower Domain Scores", color='#0284c7')
+            story.append(Image(ct_bar_img, width=6.5*inch, height=4*inch))
+        except Exception as e:
+            pass
+    
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Domain scores table
+    domain_data = [['Domain', 'Score', 'Maturity', 'Answered', 'Weight']]
+    for dname, data in ct_scores["domains"].items():
+        level = get_maturity(data["score"])[0]
+        domain_data.append([
+            dname[:35] + "..." if len(dname) > 35 else dname,
+            f'{data["score"]:.0f}%',
+            level,
+            f'{data["answered"]}/{data["total"]}',
+            f'{data["weight"]*100:.0f}%'
+        ])
+    
+    domain_table = Table(domain_data, colWidths=[2.25*inch, 0.75*inch, 1*inch, 1*inch, 0.75*inch])
+    domain_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), aws_dark),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+        ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(domain_table)
+    
+    story.append(PageBreak())
+    
+    # Detailed domain findings
+    story.append(Paragraph("4.2 Detailed Domain Findings", styles['SubSectionTitle']))
+    
+    for dname, ddata in ct_questions.items():
+        if dname not in ct_scores["domains"]:
+            continue
+        domain_score = ct_scores["domains"][dname]
+        
+        story.append(Paragraph(f"<b>{dname}</b>", styles['DomainTitle']))
+        story.append(Paragraph(f"<i>{ddata['description']}</i>", styles['SmallText']))
+        story.append(Paragraph(
+            f"Score: {domain_score['score']:.0f}% | Maturity: {get_maturity(domain_score['score'])[0]} | "
+            f"Answered: {domain_score['answered']}/{domain_score['total']}",
+            styles['SmallText']
+        ))
+        
+        # Show questions with low scores (gaps)
+        low_score_questions = [q for q in ddata['questions'] if q['id'] in ct_responses and ct_responses[q['id']] <= 2]
+        if low_score_questions:
+            story.append(Paragraph("<font color='#DC2626'>Identified Gaps:</font>", styles['SmallText']))
+            for q in low_score_questions[:3]:  # Limit to 3 per domain
+                score = ct_responses.get(q['id'], 0)
+                story.append(Paragraph(
+                    f"• [{q['risk'].upper()}] {q['question'][:100]}... (Score: {score}/5)",
+                    styles['QuestionText']
+                ))
+        
+        story.append(Spacer(1, 0.1*inch))
+    
+    story.append(PageBreak())
+    
+    # =========================================================================
+    # GOLDEN ARCHITECTURE ASSESSMENT DETAILS
+    # =========================================================================
+    story.append(Paragraph("5. Golden Architecture Assessment", styles['SectionTitle']))
+    
+    story.append(Paragraph(
+        "The Golden Architecture assessment evaluates serverless and event-driven architecture "
+        "maturity. This modern approach enables scalability, cost efficiency, and operational excellence.",
+        styles['BodyText']
+    ))
+    
+    # Overall GA metrics
+    ga_metrics = [
+        ['Metric', 'Value'],
+        ['Overall Score', f'{ga_scores["overall"]:.1f}%'],
+        ['Maturity Level', get_maturity(ga_scores["overall"])[0]],
+        ['Questions Answered', f'{ga_scores["total_answered"]} / {ga_scores["total_questions"]}'],
+        ['Completion Rate', f'{(ga_scores["total_answered"]/ga_scores["total_questions"]*100):.0f}%'],
+        ['Critical Gaps', str(critical_ga)],
+        ['High Priority Gaps', str(high_ga)],
+    ]
+    
+    ga_metrics_table = Table(ga_metrics, colWidths=[2.5*inch, 2*inch])
+    ga_metrics_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), aws_orange),
+        ('TEXTCOLOR', (0, 0), (-1, 0), aws_dark),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+        ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(ga_metrics_table)
+    
+    story.append(Spacer(1, 0.2*inch))
+    story.append(Paragraph("5.1 Domain Analysis", styles['SubSectionTitle']))
+    
+    # Add Domain Radar Chart for Golden Architecture
+    if ga_scores["total_answered"] > 0:
+        try:
+            ga_radar_img = create_radar_chart(ga_scores["domains"], "Golden Architecture Domain Maturity", color='#7c3aed')
+            story.append(Image(ga_radar_img, width=5*inch, height=5*inch))
+        except Exception as e:
+            pass
+    
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Add Horizontal Bar Chart for GA domains
+    if ga_scores["total_answered"] > 0:
+        try:
+            ga_bar_img = create_horizontal_bar_chart(ga_scores["domains"], "Golden Architecture Domain Scores", color='#7c3aed')
+            story.append(Image(ga_bar_img, width=6.5*inch, height=3.5*inch))
+        except Exception as e:
+            pass
+    
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Domain scores table
+    ga_domain_data = [['Domain', 'Score', 'Maturity', 'Answered', 'Weight']]
+    for dname, data in ga_scores["domains"].items():
+        level = get_maturity(data["score"])[0]
+        ga_domain_data.append([
+            dname[:35] + "..." if len(dname) > 35 else dname,
+            f'{data["score"]:.0f}%',
+            level,
+            f'{data["answered"]}/{data["total"]}',
+            f'{data["weight"]*100:.0f}%'
+        ])
+    
+    ga_domain_table = Table(ga_domain_data, colWidths=[2.25*inch, 0.75*inch, 1*inch, 1*inch, 0.75*inch])
+    ga_domain_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), aws_dark),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+        ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(ga_domain_table)
+    
+    story.append(PageBreak())
+    
+    # Detailed domain findings for GA
+    story.append(Paragraph("5.2 Detailed Domain Findings", styles['SubSectionTitle']))
+    
+    for dname, ddata in ga_questions.items():
+        if dname not in ga_scores["domains"]:
+            continue
+        domain_score = ga_scores["domains"][dname]
+        
+        story.append(Paragraph(f"<b>{dname}</b>", styles['DomainTitle']))
+        story.append(Paragraph(f"<i>{ddata['description']}</i>", styles['SmallText']))
+        story.append(Paragraph(
+            f"Score: {domain_score['score']:.0f}% | Maturity: {get_maturity(domain_score['score'])[0]} | "
+            f"Answered: {domain_score['answered']}/{domain_score['total']}",
+            styles['SmallText']
+        ))
+        
+        # Show questions with low scores (gaps)
+        low_score_questions = [q for q in ddata['questions'] if q['id'] in ga_responses and ga_responses[q['id']] <= 2]
+        if low_score_questions:
+            story.append(Paragraph("<font color='#DC2626'>Identified Gaps:</font>", styles['SmallText']))
+            for q in low_score_questions[:3]:
+                score = ga_responses.get(q['id'], 0)
+                story.append(Paragraph(
+                    f"• [{q['risk'].upper()}] {q['question'][:100]}... (Score: {score}/5)",
+                    styles['QuestionText']
+                ))
+        
+        story.append(Spacer(1, 0.1*inch))
+    
+    story.append(PageBreak())
+    
+    # =========================================================================
+    # GAP ANALYSIS
+    # =========================================================================
+    story.append(Paragraph("6. Gap Analysis", styles['SectionTitle']))
+    
+    story.append(Paragraph(
+        "This section details identified gaps prioritized by risk level. Gaps are questions "
+        "scored at 2 or below (Initial or Developing maturity). Addressing these gaps should "
+        "be the primary focus of improvement efforts.",
+        styles['BodyText']
+    ))
+    
+    all_gaps = ct_gaps + ga_gaps
+    
+    # Add Gap Distribution Pie Chart
+    try:
+        gap_pie_img = create_gap_pie_chart(ct_gaps, ga_gaps)
+        story.append(Image(gap_pie_img, width=5*inch, height=3.75*inch))
+    except Exception as e:
+        pass
+    
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Critical Gaps
+    story.append(Paragraph("6.1 Critical Gaps", styles['SubSectionTitle']))
+    critical_gaps = [g for g in all_gaps if g['risk'] == 'critical']
+    
+    if critical_gaps:
+        story.append(Paragraph(
+            f"<font color='#DC2626'><b>{len(critical_gaps)} critical gap(s) identified requiring immediate attention.</b></font>",
+            styles['BodyText']
+        ))
+        
+        for gap in critical_gaps[:10]:
+            story.append(Paragraph(f"<b>{gap['id']}</b> - {gap['domain']}", styles['DomainTitle']))
+            story.append(Paragraph(f"Question: {gap['question']}", styles['QuestionText']))
+            if gap.get('context'):
+                story.append(Paragraph(f"<i>Impact: {gap['context'][:200]}...</i>", styles['SmallText']))
+            story.append(Paragraph(f"Current Score: {gap['score']}/5 | Target: 4-5", styles['SmallText']))
+            story.append(Spacer(1, 0.1*inch))
+    else:
+        story.append(Paragraph("No critical gaps identified.", styles['BodyText']))
+    
+    story.append(PageBreak())
+    
+    # High Priority Gaps
+    story.append(Paragraph("6.2 High Priority Gaps", styles['SubSectionTitle']))
+    high_gaps = [g for g in all_gaps if g['risk'] == 'high']
+    
+    if high_gaps:
+        story.append(Paragraph(
+            f"<font color='#EA580C'><b>{len(high_gaps)} high priority gap(s) identified.</b></font>",
+            styles['BodyText']
+        ))
+        
+        for gap in high_gaps[:10]:
+            story.append(Paragraph(f"<b>{gap['id']}</b> - {gap['domain']}", styles['DomainTitle']))
+            story.append(Paragraph(f"Question: {gap['question']}", styles['QuestionText']))
+            story.append(Paragraph(f"Current Score: {gap['score']}/5", styles['SmallText']))
+            story.append(Spacer(1, 0.05*inch))
+    else:
+        story.append(Paragraph("No high priority gaps identified.", styles['BodyText']))
+    
+    # Medium Priority Gaps
+    story.append(Spacer(1, 0.2*inch))
+    story.append(Paragraph("6.3 Medium Priority Gaps", styles['SubSectionTitle']))
+    medium_gaps = [g for g in all_gaps if g['risk'] == 'medium']
+    
+    if medium_gaps:
+        story.append(Paragraph(
+            f"<font color='#CA8A04'><b>{len(medium_gaps)} medium priority gap(s) identified.</b></font>",
+            styles['BodyText']
+        ))
+        
+        # List in compact format
+        for gap in medium_gaps[:15]:
+            story.append(Paragraph(
+                f"• <b>{gap['id']}</b>: {gap['question'][:80]}... (Score: {gap['score']}/5)",
+                styles['QuestionText']
+            ))
+    else:
+        story.append(Paragraph("No medium priority gaps identified.", styles['BodyText']))
+    
+    story.append(PageBreak())
+    
+    # =========================================================================
+    # INDUSTRY BENCHMARK
+    # =========================================================================
+    story.append(Paragraph("7. Industry Benchmark Comparison", styles['SectionTitle']))
+    
+    story.append(Paragraph(
+        f"This section compares your assessment results against industry benchmarks for the "
+        f"<b>{bench['name']}</b> sector.",
+        styles['BodyText']
+    ))
+    
+    # Add Industry Comparison Bar Chart
+    try:
+        industry_chart_img = create_industry_comparison_chart(combined, benchmarks, industry)
+        story.append(Image(industry_chart_img, width=6.5*inch, height=4*inch))
+    except Exception as e:
+        pass
+    
+    story.append(Spacer(1, 0.2*inch))
+    
+    # All industries comparison
+    story.append(Paragraph("Cross-Industry Comparison", styles['SubSectionTitle']))
+    
+    industry_data = [['Industry', 'Average', 'Top Performers', 'Your Score', 'Variance']]
+    for ind_key, ind_data in benchmarks.items():
+        var = combined - ind_data['avg']
+        industry_data.append([
+            ind_data['name'],
+            f"{ind_data['avg']}%",
+            f"{ind_data['top']}%",
+            f'{combined:.0f}%',
+            f'{var:+.0f}%'
+        ])
+    
+    industry_table = Table(industry_data, colWidths=[2*inch, 1*inch, 1.25*inch, 1*inch, 1*inch])
+    industry_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), aws_dark),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+        ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(industry_table)
+    
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Key insights
+    story.append(Paragraph("Benchmark Insights", styles['SubSectionTitle']))
+    
+    insights = []
+    if combined >= bench['top']:
+        insights.append(f"• <b>Top Performer:</b> Your score exceeds the top performer benchmark of {bench['top']}%.")
+    elif combined >= bench['avg']:
+        insights.append(f"• <b>Above Average:</b> Your score exceeds the industry average by {combined - bench['avg']:.0f}%.")
+        insights.append(f"• <b>Path to Excellence:</b> {bench['top'] - combined:.0f}% improvement needed to reach top performer status.")
+    else:
+        insights.append(f"• <b>Below Average:</b> Your score is {bench['avg'] - combined:.0f}% below the industry average.")
+        insights.append(f"• <b>Priority Focus:</b> Address critical and high-priority gaps to improve competitive position.")
+    
+    for insight in insights:
+        story.append(Paragraph(insight, styles['BodyText']))
+    
+    story.append(PageBreak())
+    
+    # =========================================================================
+    # MATURITY ROADMAP
+    # =========================================================================
+    story.append(Paragraph("8. Maturity Roadmap", styles['SectionTitle']))
+    
+    # Add Maturity Roadmap Visualization
+    try:
+        roadmap_img = create_maturity_roadmap_chart()
+        story.append(Image(roadmap_img, width=7*inch, height=3*inch))
+    except Exception as e:
+        pass
+    
+    story.append(Spacer(1, 0.2*inch))
+    
+    story.append(Paragraph(
+        "This roadmap provides a phased approach to improving maturity across assessed domains. "
+        "Timeline estimates are based on typical enterprise implementations.",
+        styles['BodyText']
+    ))
+    
+    # Phase 1: Foundation (0-3 months)
+    story.append(Paragraph("Phase 1: Foundation (0-3 months)", styles['SubSectionTitle']))
+    story.append(Paragraph(
+        "Focus on addressing critical gaps and establishing foundational governance:",
+        styles['BodyText']
+    ))
+    foundation_items = [
+        "• Remediate all critical security and compliance gaps",
+        "• Document and formalize multi-account strategy",
+        "• Establish Cloud Center of Excellence (CCoE)",
+        "• Implement basic guardrails and preventive controls",
+        "• Deploy centralized logging and monitoring",
+    ]
+    for item in foundation_items:
+        story.append(Paragraph(item, styles['QuestionText']))
+    
+    story.append(Spacer(1, 0.15*inch))
+    
+    # Phase 2: Standardization (3-6 months)
+    story.append(Paragraph("Phase 2: Standardization (3-6 months)", styles['SubSectionTitle']))
+    story.append(Paragraph(
+        "Establish consistent processes and expand Control Tower adoption:",
+        styles['BodyText']
+    ))
+    standard_items = [
+        "• Deploy Control Tower with customized guardrails",
+        "• Implement Account Factory for standardized provisioning",
+        "• Establish OU hierarchy aligned with business structure",
+        "• Deploy detective controls and security automation",
+        "• Begin serverless pattern adoption for new workloads",
+    ]
+    for item in standard_items:
+        story.append(Paragraph(item, styles['QuestionText']))
+    
+    story.append(Spacer(1, 0.15*inch))
+    
+    # Phase 3: Optimization (6-12 months)
+    story.append(Paragraph("Phase 3: Optimization (6-12 months)", styles['SubSectionTitle']))
+    story.append(Paragraph(
+        "Optimize operations and expand advanced capabilities:",
+        styles['BodyText']
+    ))
+    optimize_items = [
+        "• Migrate existing accounts into Control Tower management",
+        "• Implement advanced cost optimization and FinOps practices",
+        "• Deploy comprehensive serverless observability",
+        "• Establish self-service capabilities with guardrails",
+        "• Implement continuous compliance and drift detection",
+    ]
+    for item in optimize_items:
+        story.append(Paragraph(item, styles['QuestionText']))
+    
+    story.append(Spacer(1, 0.15*inch))
+    
+    # Phase 4: Excellence (12+ months)
+    story.append(Paragraph("Phase 4: Excellence (12+ months)", styles['SubSectionTitle']))
+    story.append(Paragraph(
+        "Achieve industry-leading practices and continuous improvement:",
+        styles['BodyText']
+    ))
+    excellence_items = [
+        "• Policy-as-Code with automated enforcement",
+        "• Full event-driven architecture adoption",
+        "• Advanced ML/AI for operations optimization",
+        "• Continuous maturity assessment and improvement",
+        "• Knowledge sharing and industry thought leadership",
+    ]
+    for item in excellence_items:
+        story.append(Paragraph(item, styles['QuestionText']))
+    
+    story.append(PageBreak())
+    
+    # =========================================================================
+    # IMPLEMENTATION RECOMMENDATIONS
+    # =========================================================================
+    story.append(Paragraph("9. Implementation Recommendations", styles['SectionTitle']))
+    
+    story.append(Paragraph(
+        "Based on the assessment results, the following prioritized recommendations are provided:",
+        styles['BodyText']
+    ))
+    
+    # Quick Wins
+    story.append(Paragraph("Quick Wins (0-30 days)", styles['SubSectionTitle']))
+    quick_wins = [
+        ("Enable AWS CloudTrail", "Centralize audit logging across all accounts", "Low", "1-2 days"),
+        ("Enable AWS Config", "Track configuration changes and compliance", "Low", "2-3 days"),
+        ("Review IAM policies", "Identify and remediate overly permissive policies", "Medium", "1 week"),
+        ("Enable GuardDuty", "Deploy threat detection across accounts", "Low", "1-2 days"),
+        ("Document OU structure", "Formalize organizational unit hierarchy", "Low", "3-5 days"),
+    ]
+    
+    quick_win_data = [['Action', 'Description', 'Effort', 'Timeline']]
+    for qw in quick_wins:
+        quick_win_data.append(list(qw))
+    
+    qw_table = Table(quick_win_data, colWidths=[1.5*inch, 2.5*inch, 0.75*inch, 1*inch])
+    qw_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), success_green),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+        ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(qw_table)
+    
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Strategic Initiatives
+    story.append(Paragraph("Strategic Initiatives (1-6 months)", styles['SubSectionTitle']))
+    strategic = [
+        ("Control Tower Deployment", "Deploy AWS Control Tower with customized guardrails", "High", "4-6 weeks"),
+        ("Account Factory Setup", "Automate account provisioning with templates", "Medium", "2-3 weeks"),
+        ("Security Hub Integration", "Centralize security findings and compliance", "Medium", "2-3 weeks"),
+        ("Serverless Framework", "Establish serverless development standards", "Medium", "3-4 weeks"),
+        ("Cost Optimization", "Implement FinOps practices and tools", "Medium", "4-6 weeks"),
+    ]
+    
+    strategic_data = [['Initiative', 'Description', 'Effort', 'Timeline']]
+    for s in strategic:
+        strategic_data.append(list(s))
+    
+    s_table = Table(strategic_data, colWidths=[1.5*inch, 2.5*inch, 0.75*inch, 1*inch])
+    s_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), primary_blue),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+        ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(s_table)
+    
+    story.append(PageBreak())
+    
+    # =========================================================================
+    # RISK ASSESSMENT
+    # =========================================================================
+    story.append(Paragraph("10. Risk Assessment", styles['SectionTitle']))
+    
+    story.append(Paragraph(
+        "This section identifies key risks associated with the current assessment state and "
+        "provides mitigation strategies.",
+        styles['BodyText']
+    ))
+    
+    # Risk matrix
+    risks = [
+        ["Security & Compliance", "HIGH" if critical_ct + critical_ga > 0 else "MEDIUM", 
+         "Unaddressed critical gaps expose organization to security incidents and compliance failures",
+         "Prioritize critical gap remediation; implement detective controls"],
+        ["Operational Efficiency", "MEDIUM" if ct_scores["overall"] < 60 else "LOW",
+         "Inconsistent governance leads to operational overhead and slow delivery",
+         "Standardize through Control Tower; automate account provisioning"],
+        ["Cost Management", "MEDIUM",
+         "Lack of centralized visibility leads to cost overruns",
+         "Deploy Cost Explorer; implement tagging strategy; enable budgets"],
+        ["Skills Gap", "HIGH" if ga_scores["overall"] < 40 else "MEDIUM",
+         "Limited serverless expertise constrains modernization",
+         "Invest in training; partner with AWS; start with pilot projects"],
+        ["Vendor Lock-in", "LOW",
+         "Heavy AWS investment may limit flexibility",
+         "Use abstraction layers; maintain multi-cloud strategy where needed"],
+    ]
+    
+    risk_data = [['Risk Area', 'Level', 'Description', 'Mitigation']]
+    for r in risks:
+        risk_data.append(r)
+    
+    risk_table = Table(risk_data, colWidths=[1.25*inch, 0.6*inch, 2.25*inch, 2*inch])
+    risk_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), aws_dark),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+        ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(risk_table)
+    
+    story.append(PageBreak())
+    
+    # =========================================================================
+    # AI ANALYSIS
+    # =========================================================================
+    story.append(Paragraph("11. AI-Powered Analysis", styles['SectionTitle']))
+    
+    if ai_analysis and not ai_analysis.startswith("⚠️"):
+        story.append(Paragraph(
+            "The following analysis was generated using AI to provide additional insights "
+            "based on the assessment data:",
+            styles['BodyText']
+        ))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Parse and format AI analysis (split into paragraphs)
+        ai_paragraphs = ai_analysis.split('\n\n')
+        for para in ai_paragraphs[:30]:  # Limit to prevent overflow
+            if para.strip():
+                # Clean up markdown formatting for PDF
+                clean_para = para.replace('**', '').replace('##', '').replace('#', '').replace('*', '')
+                if clean_para.strip():
+                    story.append(Paragraph(clean_para.strip(), styles['BodyText']))
+                    story.append(Spacer(1, 0.1*inch))
+    else:
+        story.append(Paragraph(
+            "AI analysis has not been generated for this assessment. Generate AI insights "
+            "from the AI Insights tab to include detailed recommendations in future reports.",
+            styles['BodyText']
+        ))
+    
+    story.append(PageBreak())
+    
+    # =========================================================================
+    # APPENDIX A: Question Details
+    # =========================================================================
+    story.append(Paragraph("Appendix A: Assessment Question Details", styles['SectionTitle']))
+    
+    story.append(Paragraph(
+        "This appendix provides a summary of all assessment questions with responses.",
+        styles['BodyText']
+    ))
+    
+    story.append(Paragraph("Control Tower Questions", styles['SubSectionTitle']))
+    
+    ct_question_data = [['ID', 'Domain', 'Risk', 'Score']]
+    for dname, ddata in ct_questions.items():
+        for q in ddata['questions']:
+            score = ct_responses.get(q['id'], '-')
+            if score != '-':
+                score = f"{score}/5"
+            ct_question_data.append([q['id'], dname[:20], q['risk'].upper(), str(score)])
+    
+    # Split into chunks to avoid page overflow
+    chunk_size = 30
+    for i in range(0, len(ct_question_data), chunk_size):
+        chunk = ct_question_data[i:i+chunk_size]
+        if i > 0:
+            chunk.insert(0, ['ID', 'Domain', 'Risk', 'Score'])
+        
+        ct_q_table = Table(chunk, colWidths=[1*inch, 2.5*inch, 0.75*inch, 0.75*inch])
+        ct_q_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), aws_dark),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
+            ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+            ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+            ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ]))
+        story.append(ct_q_table)
+        story.append(Spacer(1, 0.1*inch))
+    
+    story.append(PageBreak())
+    
+    story.append(Paragraph("Golden Architecture Questions", styles['SubSectionTitle']))
+    
+    ga_question_data = [['ID', 'Domain', 'Risk', 'Score']]
+    for dname, ddata in ga_questions.items():
+        for q in ddata['questions']:
+            score = ga_responses.get(q['id'], '-')
+            if score != '-':
+                score = f"{score}/5"
+            ga_question_data.append([q['id'], dname[:20], q['risk'].upper(), str(score)])
+    
+    for i in range(0, len(ga_question_data), chunk_size):
+        chunk = ga_question_data[i:i+chunk_size]
+        if i > 0:
+            chunk.insert(0, ['ID', 'Domain', 'Risk', 'Score'])
+        
+        ga_q_table = Table(chunk, colWidths=[1*inch, 2.5*inch, 0.75*inch, 0.75*inch])
+        ga_q_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), aws_dark),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
+            ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+            ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+            ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ]))
+        story.append(ga_q_table)
+        story.append(Spacer(1, 0.1*inch))
+    
+    story.append(PageBreak())
+    
+    # =========================================================================
+    # APPENDIX B: Scoring Methodology
+    # =========================================================================
+    story.append(Paragraph("Appendix B: Scoring Methodology", styles['SectionTitle']))
+    
+    story.append(Paragraph(
+        "This appendix details the scoring methodology used in this assessment.",
+        styles['BodyText']
+    ))
+    
+    story.append(Paragraph("Maturity Levels", styles['SubSectionTitle']))
+    
+    maturity_levels = [
+        ['Level', 'Score Range', 'Characteristics'],
+        ['Initial', '0-20%', 'Ad-hoc processes, reactive approach, minimal documentation'],
+        ['Developing', '21-40%', 'Basic processes emerging, inconsistent implementation'],
+        ['Defined', '41-60%', 'Documented processes, partial organizational adoption'],
+        ['Managed', '61-80%', 'Consistent implementation, metrics-driven improvement'],
+        ['Optimized', '81-100%', 'Industry-leading, continuous optimization, automation'],
+    ]
+    
+    maturity_table = Table(maturity_levels, colWidths=[1.25*inch, 1*inch, 3.75*inch])
+    maturity_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), aws_dark),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (-1, -1), light_gray),
+        ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(maturity_table)
+    
+    story.append(Spacer(1, 0.2*inch))
+    
+    story.append(Paragraph("Risk Prioritization", styles['SubSectionTitle']))
+    
+    risk_levels = [
+        ['Risk Level', 'Definition', 'Response Time'],
+        ['Critical', 'Immediate security or compliance exposure', 'Immediate (0-7 days)'],
+        ['High', 'Significant operational or security risk', 'Short-term (1-4 weeks)'],
+        ['Medium', 'Moderate impact on efficiency or compliance', 'Medium-term (1-3 months)'],
+        ['Low', 'Minor improvement opportunity', 'Long-term (3-6 months)'],
+    ]
+    
+    risk_table = Table(risk_levels, colWidths=[1.25*inch, 2.75*inch, 2*inch])
+    risk_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), aws_dark),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, border_gray),
+        ('BACKGROUND', (0, 1), (0, 1), colors.HexColor('#FEE2E2')),
+        ('BACKGROUND', (0, 2), (0, 2), colors.HexColor('#FFEDD5')),
+        ('BACKGROUND', (0, 3), (0, 3), colors.HexColor('#FEF3C7')),
+        ('BACKGROUND', (0, 4), (0, 4), colors.HexColor('#DCFCE7')),
+        ('BACKGROUND', (1, 1), (-1, -1), light_gray),
+        ('ALIGN', (2, 0), (2, -1), 'CENTER'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(risk_table)
+    
+    story.append(Spacer(1, 0.3*inch))
+    
+    story.append(Paragraph("Domain Weights", styles['SubSectionTitle']))
+    
+    story.append(Paragraph(
+        "Domain scores are weighted based on their relative importance to overall enterprise readiness. "
+        "The overall score is calculated as the weighted average of individual domain scores.",
+        styles['BodyText']
+    ))
+    
+    # Footer
+    story.append(Spacer(1, 0.5*inch))
+    story.append(Paragraph(
+        f"<b>Report Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+        f"<b>Platform Version:</b> AWS Enterprise Assessment Platform v3.0",
+        styles['Footer']
+    ))
+    story.append(Paragraph(
+        f"© {datetime.now().year} AWS Enterprise Assessment Platform - Confidential",
+        styles['Footer']
+    ))
+    
+    # Build PDF
+    doc.build(story)
+    
+    buffer.seek(0)
+    return buffer.getvalue()
+
+# =============================================================================
 # MAIN APPLICATION
 # =============================================================================
 def main():
@@ -1437,6 +3718,7 @@ def main():
         ct_scores = calc_scores(st.session_state.ct_responses, CT_QUESTIONS)
         ga_scores = calc_scores(st.session_state.ga_responses, GA_QUESTIONS)
         combined = (ct_scores["overall"] + ga_scores["overall"]) / 2 if (ct_scores["overall"] > 0 or ga_scores["overall"] > 0) else 0
+        bench = BENCHMARKS[st.session_state.industry]
         
         # Metric Cards
         col1, col2, col3, col4 = st.columns(4)
@@ -1447,7 +3729,6 @@ def main():
         with col3:
             render_metric_card(combined, "Combined Enterprise Score")
         with col4:
-            bench = BENCHMARKS[st.session_state.industry]
             # Check if any questions have been answered
             has_responses = ct_scores["total_answered"] > 0 or ga_scores["total_answered"] > 0
             if has_responses:
@@ -1470,54 +3751,81 @@ def main():
         
         st.markdown("---")
         
-        # Domain Scores
+        # Interactive Score Gauges
+        st.markdown("#### 📈 Score Overview")
+        try:
+            gauge_fig = create_ui_score_gauges(
+                ct_scores["overall"], 
+                ga_scores["overall"], 
+                combined, 
+                bench["avg"],
+                bench["name"]
+            )
+            st.plotly_chart(gauge_fig, use_container_width=True)
+        except Exception as e:
+            st.warning(f"Could not render gauge charts: {e}")
+        
+        # Maturity Progress Chart
+        st.markdown("#### 📊 Maturity Progress")
+        try:
+            progress_fig = create_ui_maturity_progress_chart(
+                ct_scores["overall"],
+                ga_scores["overall"],
+                combined,
+                bench["avg"]
+            )
+            st.plotly_chart(progress_fig, use_container_width=True)
+        except Exception as e:
+            pass
+        
+        st.markdown("---")
+        
+        # Domain Analysis Charts
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("#### 🎛️ Control Tower Domain Scores")
+            st.markdown("#### 🎛️ Control Tower Domains")
             if ct_scores["total_answered"] > 0:
-                for dname, data in ct_scores["domains"].items():
-                    if data["answered"] > 0:
-                        level, lclass, _ = get_maturity(data["score"])
-                        colors = {"success": "#059669", "warning": "#d97706", "danger": "#dc2626", "neutral": "#64748b"}
-                        st.markdown(f'''
-                        <div class="domain-card">
-                            <div class="domain-header">
-                                <span class="domain-name">{dname}</span>
-                                <span class="domain-score" style="color: {colors.get(lclass, '#64748b')}">{data["score"]:.0f}%</span>
-                            </div>
-                            <div class="domain-meta">
-                                <span>{level}</span>
-                                <span>{data["answered"]}/{data["total"]} answered</span>
-                            </div>
-                        </div>
-                        ''', unsafe_allow_html=True)
-                        st.progress(data["score"] / 100)
+                try:
+                    ct_radar_fig = create_ui_radar_chart(ct_scores["domains"], "Control Tower Domain Maturity", "#0284c7")
+                    st.plotly_chart(ct_radar_fig, use_container_width=True)
+                except Exception as e:
+                    st.warning(f"Could not render radar chart: {e}")
+                
+                try:
+                    ct_bar_fig = create_ui_horizontal_bar_chart(ct_scores["domains"], "Domain Scores", "#0284c7")
+                    st.plotly_chart(ct_bar_fig, use_container_width=True)
+                except Exception as e:
+                    pass
             else:
-                st.info("📝 Complete Control Tower assessment questions to see domain scores")
+                st.info("📝 Complete Control Tower assessment questions to see domain analysis")
         
         with col2:
-            st.markdown("#### ⚡ Golden Architecture Domain Scores")
+            st.markdown("#### ⚡ Golden Architecture Domains")
             if ga_scores["total_answered"] > 0:
-                for dname, data in ga_scores["domains"].items():
-                    if data["answered"] > 0:
-                        level, lclass, _ = get_maturity(data["score"])
-                        colors = {"success": "#059669", "warning": "#d97706", "danger": "#dc2626", "neutral": "#64748b"}
-                        st.markdown(f'''
-                        <div class="domain-card">
-                            <div class="domain-header">
-                                <span class="domain-name">{dname}</span>
-                                <span class="domain-score" style="color: {colors.get(lclass, '#64748b')}">{data["score"]:.0f}%</span>
-                            </div>
-                            <div class="domain-meta">
-                                <span>{level}</span>
-                                <span>{data["answered"]}/{data["total"]} answered</span>
-                            </div>
-                        </div>
-                        ''', unsafe_allow_html=True)
-                        st.progress(data["score"] / 100)
+                try:
+                    ga_radar_fig = create_ui_radar_chart(ga_scores["domains"], "Golden Architecture Domain Maturity", "#7c3aed")
+                    st.plotly_chart(ga_radar_fig, use_container_width=True)
+                except Exception as e:
+                    st.warning(f"Could not render radar chart: {e}")
+                
+                try:
+                    ga_bar_fig = create_ui_horizontal_bar_chart(ga_scores["domains"], "Domain Scores", "#7c3aed")
+                    st.plotly_chart(ga_bar_fig, use_container_width=True)
+                except Exception as e:
+                    pass
             else:
-                st.info("📝 Complete Golden Architecture assessment questions to see domain scores")
+                st.info("📝 Complete Golden Architecture assessment questions to see domain analysis")
+        
+        st.markdown("---")
+        
+        # Industry Benchmark Comparison
+        st.markdown("#### 🏆 Industry Benchmark Comparison")
+        try:
+            industry_fig = create_ui_industry_comparison_chart(combined, BENCHMARKS, st.session_state.industry)
+            st.plotly_chart(industry_fig, use_container_width=True)
+        except Exception as e:
+            st.warning(f"Could not render industry comparison: {e}")
     
     # ==========================================================================
     # TAB 2: Control Tower Assessment
@@ -1591,11 +3899,69 @@ def main():
         </div>
         ''', unsafe_allow_html=True)
         
+        ct_gaps = find_gaps(st.session_state.ct_responses, CT_QUESTIONS)
+        ga_gaps = find_gaps(st.session_state.ga_responses, GA_QUESTIONS)
+        
+        # Gap Distribution Charts
+        st.markdown("#### 📊 Gap Overview")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            try:
+                gap_donut_fig = create_ui_gap_donut_chart(ct_gaps, ga_gaps)
+                st.plotly_chart(gap_donut_fig, use_container_width=True)
+            except Exception as e:
+                st.warning(f"Could not render gap chart: {e}")
+        
+        with col2:
+            # Summary metrics
+            total_gaps = len(ct_gaps) + len(ga_gaps)
+            crit_total = len([g for g in ct_gaps + ga_gaps if g["risk"] == "critical"])
+            high_total = len([g for g in ct_gaps + ga_gaps if g["risk"] == "high"])
+            med_total = len([g for g in ct_gaps + ga_gaps if g["risk"] == "medium"])
+            
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem;">
+                <h4 style="color: #dc2626; margin: 0 0 0.5rem 0;">🔴 Critical Gaps</h4>
+                <p style="font-size: 2rem; font-weight: bold; color: #1e293b; margin: 0;">{}</p>
+                <p style="color: #64748b; margin: 0;">Require immediate attention</p>
+            </div>
+            """.format(crit_total), unsafe_allow_html=True)
+            
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem;">
+                <h4 style="color: #ea580c; margin: 0 0 0.5rem 0;">🟠 High Priority</h4>
+                <p style="font-size: 2rem; font-weight: bold; color: #1e293b; margin: 0;">{}</p>
+                <p style="color: #64748b; margin: 0;">Address within 1-4 weeks</p>
+            </div>
+            """.format(high_total), unsafe_allow_html=True)
+            
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #fefce8 0%, #fef3c7 100%); padding: 1.5rem; border-radius: 12px;">
+                <h4 style="color: #d97706; margin: 0 0 0.5rem 0;">🟡 Medium Priority</h4>
+                <p style="font-size: 2rem; font-weight: bold; color: #1e293b; margin: 0;">{}</p>
+                <p style="color: #64748b; margin: 0;">Plan for 1-3 months</p>
+            </div>
+            """.format(med_total), unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # Gap Heatmap
+        if len(ct_gaps) + len(ga_gaps) > 0:
+            st.markdown("#### 🗺️ Gap Heatmap by Domain")
+            try:
+                heatmap_fig = create_ui_gap_heatmap(ct_gaps, ga_gaps, CT_QUESTIONS, GA_QUESTIONS)
+                st.plotly_chart(heatmap_fig, use_container_width=True)
+            except Exception as e:
+                pass
+        
+        st.markdown("---")
+        
+        # Detailed Gap Lists
         col1, col2 = st.columns(2)
         
         with col1:
             st.markdown("#### 🎛️ Control Tower Gaps")
-            ct_gaps = find_gaps(st.session_state.ct_responses, CT_QUESTIONS)
             
             if ct_gaps:
                 crit = len([g for g in ct_gaps if g["risk"] == "critical"])
@@ -1630,7 +3996,6 @@ def main():
         
         with col2:
             st.markdown("#### ⚡ Golden Architecture Gaps")
-            ga_gaps = find_gaps(st.session_state.ga_responses, GA_QUESTIONS)
             
             if ga_gaps:
                 crit = len([g for g in ga_gaps if g["risk"] == "critical"])
@@ -1814,7 +4179,7 @@ Format with clear markdown headers and bullet points for readability.
             <div class="section-icon">📄</div>
             <div>
                 <div class="section-title">Reports & Export</div>
-                <div class="section-subtitle">Generate executive reports and export assessment data</div>
+                <div class="section-subtitle">Generate comprehensive PDF reports and export assessment data</div>
             </div>
         </div>
         ''', unsafe_allow_html=True)
@@ -1839,10 +4204,58 @@ Format with clear markdown headers and bullet points for readability.
         
         st.markdown("---")
         
+        # PDF Report Section
+        st.markdown("#### 📑 Comprehensive PDF Report")
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 1rem; border-radius: 12px; border-left: 4px solid #0284c7; margin-bottom: 1rem;">
+            <p style="margin: 0; color: #0369a1;">
+                <strong>Professional 30+ Page Report</strong> - Includes executive summary, detailed domain analysis, 
+                gap assessment, industry benchmarks, maturity roadmap, implementation recommendations, and appendices.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("📊 Generate Executive Report", type="primary", use_container_width=True):
+            if st.button("📊 Generate Comprehensive PDF Report", type="primary", use_container_width=True):
+                with st.spinner("Generating comprehensive PDF report... This may take a moment."):
+                    try:
+                        pdf_data = generate_pdf_report(
+                            org_name=st.session_state.org_name,
+                            assessor_name=st.session_state.assessor_name,
+                            industry=st.session_state.industry,
+                            ct_responses=st.session_state.ct_responses,
+                            ga_responses=st.session_state.ga_responses,
+                            ct_questions=CT_QUESTIONS,
+                            ga_questions=GA_QUESTIONS,
+                            benchmarks=BENCHMARKS,
+                            ai_analysis=st.session_state.ai_analysis
+                        )
+                        st.session_state.pdf_report = pdf_data
+                        st.success("✅ Comprehensive PDF report generated successfully! (~30 pages)")
+                    except Exception as e:
+                        st.error(f"Error generating PDF: {str(e)}")
+        
+        with col2:
+            if 'pdf_report' in st.session_state and st.session_state.pdf_report:
+                st.download_button(
+                    "⬇️ Download PDF Report",
+                    st.session_state.pdf_report,
+                    f"AWS_Enterprise_Assessment_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                    "application/pdf",
+                    use_container_width=True
+                )
+        
+        st.markdown("---")
+        
+        # Markdown Report (Secondary option)
+        st.markdown("#### 📝 Quick Markdown Report")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📄 Generate Markdown Summary", use_container_width=True):
                 ct_gaps = find_gaps(st.session_state.ct_responses, CT_QUESTIONS)
                 ga_gaps = find_gaps(st.session_state.ga_responses, GA_QUESTIONS)
                 
@@ -1936,14 +4349,14 @@ Format with clear markdown headers and bullet points for readability.
 *© {datetime.now().year} - Enterprise Cloud Assessment*
 """
                 st.session_state.report = report
-                st.success("✅ Executive report generated successfully!")
+                st.success("✅ Markdown summary generated!")
         
         with col2:
             if st.session_state.report:
                 st.download_button(
-                    "⬇️ Download Report (Markdown)",
+                    "⬇️ Download Markdown",
                     st.session_state.report,
-                    f"aws_assessment_report_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+                    f"aws_assessment_summary_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
                     "text/markdown",
                     use_container_width=True
                 )
