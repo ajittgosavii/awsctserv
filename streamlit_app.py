@@ -1448,15 +1448,25 @@ def main():
             render_metric_card(combined, "Combined Enterprise Score")
         with col4:
             bench = BENCHMARKS[st.session_state.industry]
-            vs_avg = combined - bench["avg"]
-            color = "var(--success)" if vs_avg >= 0 else "var(--danger)"
-            st.markdown(f'''
-            <div class="metric-card">
-                <div class="metric-value" style="background: linear-gradient(135deg, {'#059669' if vs_avg >= 0 else '#dc2626'} 0%, {'#10b981' if vs_avg >= 0 else '#ef4444'} 100%); -webkit-background-clip: text; background-clip: text;">{vs_avg:+.0f}%</div>
-                <div class="metric-label">vs {bench["name"]} Average</div>
-                <div class="metric-badge badge-neutral">Industry Benchmark: {bench["avg"]}%</div>
-            </div>
-            ''', unsafe_allow_html=True)
+            # Check if any questions have been answered
+            has_responses = ct_scores["total_answered"] > 0 or ga_scores["total_answered"] > 0
+            if has_responses:
+                vs_avg = combined - bench["avg"]
+                st.markdown(f'''
+                <div class="metric-card">
+                    <div class="metric-value" style="background: linear-gradient(135deg, {'#059669' if vs_avg >= 0 else '#dc2626'} 0%, {'#10b981' if vs_avg >= 0 else '#ef4444'} 100%); -webkit-background-clip: text; background-clip: text;">{vs_avg:+.0f}%</div>
+                    <div class="metric-label">vs {bench["name"]} Average</div>
+                    <div class="metric-badge badge-neutral">Industry Benchmark: {bench["avg"]}%</div>
+                </div>
+                ''', unsafe_allow_html=True)
+            else:
+                st.markdown(f'''
+                <div class="metric-card">
+                    <div class="metric-value">N/A</div>
+                    <div class="metric-label">vs {bench["name"]} Average</div>
+                    <div class="metric-badge badge-neutral">Industry Benchmark: {bench["avg"]}%</div>
+                </div>
+                ''', unsafe_allow_html=True)
         
         st.markdown("---")
         
