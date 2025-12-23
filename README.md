@@ -1,113 +1,143 @@
 # AWS Enterprise Assessment Platform v3.0
 
-## 🚀 Deploy to Streamlit Cloud (Recommended)
-
-### Files Included
-```
-aws-assessment-platform/
-├── streamlit_app.py      # Main application (1,760 lines)
-├── requirements.txt      # Python dependencies
-├── .streamlit/
-│   └── config.toml      # Theme configuration
-└── README.md            # This file
-```
-
-**No Docker or shell scripts needed!** Streamlit Cloud handles everything.
-
-### Deployment Steps
-
-1. **Upload to GitHub**
-   - Create a new GitHub repository
-   - Upload all files maintaining the folder structure
-
-2. **Deploy on Streamlit Cloud**
-   - Go to [share.streamlit.io](https://share.streamlit.io)
-   - Click "New app"
-   - Connect your GitHub repo
-   - Select `streamlit_app.py` as main file
-   - Click "Deploy"
-
-3. **Enable AI Features (Optional)**
-   - In Streamlit Cloud, go to app Settings → Secrets
-   - Add your API key:
-   ```toml
-   ANTHROPIC_API_KEY = "sk-ant-your-key-here"
-   ```
-
----
+A comprehensive, enterprise-grade assessment tool for AWS Control Tower migration and serverless architecture readiness.
 
 ## 📊 Assessment Coverage
 
-### Control Tower Assessment (42 Questions)
-| Domain | Questions | Weight |
-|--------|-----------|--------|
-| Organizational Strategy | 4 | 12% |
-| Account Factory & Provisioning | 4 | 10% |
-| Guardrails & Preventive Controls | 4 | 15% |
-| Detective Controls & Compliance | 4 | 12% |
-| Identity & Access Management | 4 | 12% |
-| Network Architecture | 4 | 10% |
-| Logging & Monitoring | 3 | 10% |
-| Cost Management | 3 | 8% |
-| Backup & Disaster Recovery | 3 | 8% |
-| Migration Readiness | 3 | 8% |
-| Operational Readiness | 2 | 5% |
+| Category | Questions | Domains |
+|----------|-----------|---------|
+| **Control Tower** | 72 | 12 |
+| **Golden Architecture (Serverless)** | 60 | 10 |
+| **Total** | **132** | **22** |
 
-### Golden Architecture Assessment (22 Questions)
-| Domain | Questions | Weight |
-|--------|-----------|--------|
-| Serverless Compute Strategy | 4 | 18% |
-| API & Integration Layer | 4 | 15% |
-| Serverless Security | 5 | 18% |
-| Observability & Monitoring | 4 | 12% |
-| CI/CD & DevOps | 3 | 12% |
-| Cost Optimization | 2 | 10% |
-| Resilience & Reliability | 3 | 15% |
+## 🚀 Quick Deploy to Streamlit Cloud
 
----
+### Step 1: Upload to GitHub
+Create a new repository and upload these files:
+```
+aws-assessment-platform/
+├── streamlit_app.py           # Main application
+├── requirements.txt           # Dependencies
+├── .streamlit/config.toml     # Theme configuration
+└── README.md                  # This file
+```
 
-## ✅ Bug Fixes in v3.0
+### Step 2: Deploy
+1. Go to [share.streamlit.io](https://share.streamlit.io)
+2. Click "New app"
+3. Connect your GitHub repository
+4. Select `streamlit_app.py` as the main file
+5. Click "Deploy"
 
-1. **Fixed**: Questions now properly default to "Not Assessed"
-   - Progress only counts questions you've actually answered
-   - Selecting a question no longer marks all as answered
-
-2. **Removed**: Unnecessary Docker/shell files
-   - Only essential files for Streamlit Cloud deployment
-
-3. **Enhanced**: Comprehensive question context
-   - Each question includes detailed rationale
-   - Explains why the question matters for enterprise readiness
+### Step 3: Enable AI Features (Optional)
+1. Go to your app's Settings → Secrets
+2. Add your Anthropic API key:
+```toml
+ANTHROPIC_API_KEY = "sk-ant-your-key-here"
+```
 
 ---
 
-## 🎨 Features
+## ✨ Enterprise Features
 
-- **Professional Light Theme**: Clean enterprise design
-- **64 Comprehensive Questions**: With detailed context for each
-- **Well-Architected Alignment**: Questions mapped to AWS pillars
-- **Industry Benchmarking**: Compare against 6 industry verticals
-- **Gap Analysis**: Automatic prioritization by risk level
-- **AI Analysis**: Claude-powered recommendations
-- **Export Options**: Markdown reports and JSON data
+### Professional UI
+- Clean, modern light theme
+- Responsive design for presentations
+- Color-coded risk indicators
+- Progress tracking
+- Industry benchmarking
+
+### Comprehensive Assessment
+- **132 detailed questions** with context explanations
+- **22 domains** covering all aspects of Control Tower and serverless
+- **Risk-weighted scoring** (Critical, High, Medium, Low)
+- **Well-Architected Framework alignment**
+
+### AI-Powered Analysis
+- Claude integration for intelligent recommendations
+- Multiple analysis types:
+  - Gap Analysis & Prioritization
+  - 12-Month Implementation Roadmap
+  - Risk Assessment Matrix
+  - Cost-Benefit Analysis
+  - Architecture Recommendations
+  - Executive Summary
+
+### Export & Reporting
+- Executive reports in Markdown
+- JSON data export for integration
+- Professional formatting for stakeholder presentations
+
+---
+
+## 🎛️ Control Tower Domains (12)
+
+1. Organizational Strategy & Governance
+2. Account Factory & Provisioning
+3. Guardrails & Service Control Policies
+4. Detective Controls & Compliance
+5. Identity & Access Management
+6. Network Architecture
+7. Logging & Security Operations
+8. Cost Management & FinOps
+9. Backup & Disaster Recovery
+10. Migration Readiness
+11. Operational Readiness
+12. Data Protection
+
+## ⚡ Golden Architecture Domains (10)
+
+1. Serverless Compute Strategy
+2. API & Integration Layer
+3. Workflow Orchestration
+4. Serverless Data Layer
+5. Serverless Security
+6. Observability & Monitoring
+7. CI/CD & DevOps
+8. Cost Optimization
+9. Resilience & Reliability
+10. Event-Driven Architecture
+
+---
+
+## 🐛 Bug Fixes in v3.0
+
+✅ **Fixed**: Questions now properly default to "Not yet assessed"
+- Progress only counts questions you've explicitly answered
+- Selecting one question no longer marks all as answered
+
+✅ **Removed**: Unnecessary Docker/shell files
+- Only essential files for Streamlit Cloud deployment
+
+✅ **Enhanced**: Comprehensive question context
+- Each question includes detailed rationale
+- Explains AWS best practices and recommendations
 
 ---
 
 ## 💻 Local Development
 
 ```bash
+# Clone the repository
+git clone <your-repo-url>
+cd aws-assessment-platform
+
 # Install dependencies
 pip install -r requirements.txt
 
 # Optional: Set API key for AI features
 export ANTHROPIC_API_KEY="your-key"
 
-# Run locally
+# Run the application
 streamlit run streamlit_app.py
 ```
 
 ---
 
-## 📝 License
+## 📄 License
 
 Enterprise use. Contact for licensing details.
+
+---
+
+*Built with Streamlit and Claude AI*
